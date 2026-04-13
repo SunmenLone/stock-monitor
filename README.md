@@ -2,8 +2,6 @@
 
 自动监控沪深300股票，检测MA5/MA20金叉信号，并通过钉钉群机器人发送通知。
 
-## 功能特性
-
 - 监控沪深300全部300只股票
 - 使用15分钟K线计算MA5和MA20均线
 - 自动检测金叉信号（MA5上穿MA20）
@@ -17,7 +15,7 @@
 
 ```bash
 # 克隆仓库
-git clone https://github.com/yourusername/stock-v2.git
+git clone https://github.com/SunmenLone/stock-monitor.git
 cd stock-v2
 
 # 创建虚拟环境
@@ -125,7 +123,7 @@ stock-v2/
 - MA20: 29.88
 - 均线差: +0.07%
 
-📈 [查看均线图表](https://your-bucket.oss-cn-shanghai.aliyuncs.com/stock-charts/000975_xxx.png)
+📈 [查看均线图表](https://your-bucket.oss-cn-shanghai.aliyuncs.com/stock-charts/000975.png)
 ```
 
 ## 技术参数
