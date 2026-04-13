@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+ENV/
+env/
+.venv/
+
+# 环境配置（含敏感凭证）
+.env
+
+# 数据缓存
+data/
+*.json
+
+# 日志
+logs/
+*.log
+
+# 生成的图表
+charts/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# 测试缓存
+.pytest_cache/
+.coverage
+htmlcov/
+
+# macOS
+.DS_Store
+
+# 其他
+*.bak
+*.tmp

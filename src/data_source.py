@@ -1,0 +1,456 @@
+"""
+股票数据获取模块 - 多数据源支持（BaoStock主源 + AkShare备用）
+"""
+import json
+import logging
+import time
+from datetime import datetime, timedelta
+from pathlib import Path
+from typing import List, Dict, Optional, Set
+
+import pandas as pd
+
+import config
+from src.cache import KlineCache
+
+logger = logging.getLogger(__name__)
+
+# 数据源状态
+DATASOURCE_AVAILABLE = {"akshare": True, "baostock": True}
+
+
+class DataSource:
+    """多数据源封装"""
+
+    def __init__(self):
+        self.kline_cache = KlineCache()
+        self._trade_dates: Optional[Set[str]] = None
+        self._bs_logged_in = False
+
+    def _get_bs_code(self, code: str) -> str:
+        """转换为BaoStock代码格式（sh/sz前缀）"""
+        if code.startswith("6"):
+            return f"sh.{code}"
+        else:
+            return f"sz.{code}"
+
+    def get_hs300_stocks(self) -> List[Dict[str, str]]:
+        """
+        获取沪深300成分股列表
+
+        Returns:
+            [{"code": "000001", "name": "平安银行"}, ...]
+        """
+        cache_path = Path(config.HS300_CACHE_FILE)
+
+        # 检查缓存是否今日有效
+        if cache_path.exists():
+            cache_data = json.loads(cache_path.read_text())
+            cache_date = cache_data.get("date", "")
+            if cache_date == datetime.now().strftime("%Y-%m-%d"):
+                logger.info("使用沪深300缓存数据")
+                return cache_data.get("stocks", [])
+
+        # 尝试BaoStock（主源）
+        if DATASOURCE_AVAILABLE["baostock"]:
+            try:
+                import baostock as bs
+                logger.info("从BaoStock获取沪深300成分股...")
+
+                # 登录BaoStock
+                lg = bs.login()
+                if lg.error_code == '0':
+                    rs = bs.query_hs300_stocks()
+                    stocks = []
+                    while (rs.error_code == '0') & rs.next():
+                        row = rs.get_row_data()
+                        # BaoStock返回格式: date, code, name (code带sh/sz前缀)
+                        bs_code = str(row[1]).strip()
+                        # 去掉sh/sz前缀
+                        code = bs_code.split('.')[-1] if '.' in bs_code else bs_code
+                        name = str(row[2]).strip()
+                        stocks.append({"code": code, "name": name})
+
+                    cache_data = {
+                        "date": datetime.now().strftime("%Y-%m-%d"),
+                        "stocks": stocks
+                    }
+                    cache_path.write_text(json.dumps(cache_data, ensure_ascii=False, indent=2))
+                    logger.info(f"BaoStock获取沪深300成分股 {len(stocks)} 只")
+                    return stocks
+                else:
+                    logger.warning(f"BaoStock登录失败: {lg.error_msg}")
+            except Exception as e:
+                logger.warning(f"BaoStock获取沪深300失败: {e}")
+                DATASOURCE_AVAILABLE["baostock"] = False
+
+        # 备用：尝试AkShare
+        if DATASOURCE_AVAILABLE["akshare"]:
+            try:
+                import akshare as ak
+                logger.info("从AkShare获取沪深300成分股...")
+                df = ak.index_stock_cons_weight_csindex(symbol="000300")
+                stocks = []
+                for _, row in df.iterrows():
+                    code = str(row["成分券代码"])
+                    name = str(row["成分券名称"])
+                    stocks.append({"code": code, "name": name})
+
+                cache_data = {
+                    "date": datetime.now().strftime("%Y-%m-%d"),
+                    "stocks": stocks
+                }
+                cache_path.write_text(json.dumps(cache_data, ensure_ascii=False, indent=2))
+                logger.info(f"AkShare获取沪深300成分股 {len(stocks)} 只")
+                return stocks
+            except Exception as e:
+                logger.warning(f"AkShare获取沪深300失败: {e}")
+                DATASOURCE_AVAILABLE["akshare"] = False
+
+        # 备用：使用硬编码的沪深300列表（或从本地缓存读取）
+        if cache_path.exists():
+            logger.warning("使用过期缓存数据")
+            cache_data = json.loads(cache_path.read_text())
+            return cache_data.get("stocks", [])
+
+        # 最后备用：内置沪深300主要股票列表
+        logger.warning("使用内置沪深300股票列表")
+        return _get_builtin_hs300()
+
+    def get_trade_dates(self) -> Set[str]:
+        """
+        获取交易日历
+
+        Returns:
+            {"2024-01-02", "2024-01-03", ...}
+        """
+        cache_path = Path(config.TRADE_DATE_CACHE_FILE)
+
+        # 检查缓存
+        if cache_path.exists():
+            cache_data = json.loads(cache_path.read_text())
+            cache_year = cache_data.get("year", 0)
+            current_year = datetime.now().year
+            if cache_year == current_year:
+                logger.info("使用交易日历缓存")
+                return set(cache_data.get("dates", []))
+
+        # 尝试BaoStock（主源）
+        if DATASOURCE_AVAILABLE["baostock"]:
+            try:
+                import baostock as bs
+                logger.info("从BaoStock获取交易日历...")
+                lg = bs.login()
+                if lg.error_code == '0':
+                    rs = bs.query_trade_dates()
+                    dates = []
+                    while (rs.error_code == '0') & rs.next():
+                        dates.append(rs.get_row_data()[0])
+
+                    current_year_dates = [d for d in dates if d.startswith(str(datetime.now().year))]
+                    cache_data = {"year": datetime.now().year, "dates": current_year_dates}
+                    cache_path.write_text(json.dumps(cache_data, indent=2))
+                    logger.info(f"BaoStock获取 {len(current_year_dates)} 个交易日")
+                    return set(current_year_dates)
+                else:
+                    logger.warning(f"BaoStock登录失败: {lg.error_msg}")
+            except Exception as e:
+                logger.warning(f"BaoStock获取交易日历失败: {e}")
+                DATASOURCE_AVAILABLE["baostock"] = False
+
+        # 备用：尝试AkShare
+        if DATASOURCE_AVAILABLE["akshare"]:
+            try:
+                import akshare as ak
+                logger.info("从AkShare获取交易日历...")
+                df = ak.tool_trade_date_hist_sina()
+                dates = df["trade_date"].astype(str).tolist()
+                current_year_dates = [d for d in dates if d.startswith(str(datetime.now().year))]
+
+                cache_data = {"year": datetime.now().year, "dates": current_year_dates}
+                cache_path.write_text(json.dumps(cache_data, indent=2))
+                logger.info(f"AkShare获取 {len(current_year_dates)} 个交易日")
+                return set(current_year_dates)
+            except Exception as e:
+                logger.warning(f"AkShare获取交易日历失败: {e}")
+                DATASOURCE_AVAILABLE["akshare"] = False
+
+        raise RuntimeError("无法获取交易日历，请检查网络连接")
+
+    def is_trade_day(self, date: Optional[datetime] = None) -> bool:
+        """检查是否为交易日"""
+        if date is None:
+            date = datetime.now()
+
+        if self._trade_dates is None:
+            self._trade_dates = self.get_trade_dates()
+
+        date_str = date.strftime("%Y-%m-%d")
+        return date_str in self._trade_dates
+
+    def get_latest_trade_date(self, date: Optional[datetime] = None) -> str:
+        """获取最近的交易日"""
+        if date is None:
+            date = datetime.now()
+
+        if self._trade_dates is None:
+            self._trade_dates = self.get_trade_dates()
+
+        date_str = date.strftime("%Y-%m-%d")
+
+        if date_str in self._trade_dates:
+            return date_str
+
+        sorted_dates = sorted(self._trade_dates, reverse=True)
+        for d in sorted_dates:
+            if d <= date_str:
+                logger.info(f"非交易日 {date_str}，回溯到最近交易日 {d}")
+                return d
+
+        if sorted_dates:
+            return sorted_dates[0]
+
+        raise ValueError("无法获取交易日历数据")
+
+    def is_trade_time(self, dt: Optional[datetime] = None) -> bool:
+        """检查是否在交易时间段内"""
+        if dt is None:
+            dt = datetime.now()
+
+        if not self.is_trade_day(dt):
+            return False
+
+        time_str = dt.strftime("%H:%M")
+
+        if TRADING_MORNING_START <= time_str <= TRADING_MORNING_END:
+            return True
+        if TRADING_AFTERNOON_START <= time_str <= TRADING_AFTERNOON_END:
+            return True
+
+        return False
+
+    def get_stock_klines(self, code: str, days: int = None) -> Optional[pd.DataFrame]:
+        """
+        获取单只股票的15分钟K线数据（多数据源）
+
+        Args:
+            code: 股票代码（如"000001"）
+            days: 获取天数
+
+        Returns:
+            DataFrame with columns: time, open, close, high, low, volume
+        """
+        if days is None:
+            days = config.KLINE_DAYS
+
+        logger.debug(f"获取股票 {code} 15分钟K线...")
+
+        # 检查缓存
+        cached_df = self.kline_cache.get(code)
+        if cached_df is not None:
+            last_time = cached_df["time"].max()
+            try:
+                last_dt = datetime.strptime(last_time[:16], "%Y-%m-%d %H:%M")
+                if datetime.now() - last_dt < timedelta(hours=1):
+                    logger.debug(f"使用缓存K线数据 {code}")
+                    return cached_df
+            except ValueError:
+                pass
+
+        # 尝试BaoStock（主源）
+        if DATASOURCE_AVAILABLE["baostock"]:
+            df = self._get_klines_baostock(code, days)
+            if df is not None:
+                return df
+
+        # 备用：使用AkShare
+        if DATASOURCE_AVAILABLE["akshare"]:
+            df = self._get_klines_akshare(code, days)
+            if df is not None:
+                return df
+
+        logger.error(f"获取 {code} K线失败，所有数据源不可用")
+        return None
+
+    def _get_klines_akshare(self, code: str, days: int) -> Optional[pd.DataFrame]:
+        """从AkShare获取K线"""
+        try:
+            import akshare as ak
+            for attempt in range(config.REQUEST_RETRY_TIMES):
+                try:
+                    df = ak.stock_zh_a_hist_min_em(
+                        symbol=code,
+                        period=config.KLINE_PERIOD,
+                        adjust="qfq"
+                    )
+
+                    if df.empty:
+                        logger.warning(f"AkShare: 股票 {code} K线数据为空")
+                        return None
+
+                    df = df.rename(columns={
+                        "时间": "time",
+                        "开盘": "open",
+                        "收盘": "close",
+                        "最高": "high",
+                        "最低": "low",
+                        "成交量": "volume"
+                    })
+
+                    df["date"] = df["time"].str[:10]
+                    recent_dates = df["date"].unique()[-days:]
+                    df = df[df["date"].isin(recent_dates)]
+                    df = df.drop(columns=["date"])
+
+                    self.kline_cache.set(code, df)
+                    logger.debug(f"AkShare获取 {code} K线 {len(df)} 条")
+                    return df
+
+                except Exception as e:
+                    logger.warning(f"AkShare获取 {code} 失败 (尝试 {attempt+1}): {e}")
+                    if attempt < config.REQUEST_RETRY_TIMES - 1:
+                        time.sleep(1)
+
+            return None
+
+        except ImportError:
+            logger.warning("AkShare未安装")
+            DATASOURCE_AVAILABLE["akshare"] = False
+            return None
+        except Exception as e:
+            logger.warning(f"AkShare数据源不可用: {e}")
+            DATASOURCE_AVAILABLE["akshare"] = False
+            return None
+
+    def _get_klines_baostock(self, code: str, days: int) -> Optional[pd.DataFrame]:
+        """从BaoStock获取K线"""
+        try:
+            import baostock as bs
+
+            # 登录
+            if not self._bs_logged_in:
+                lg = bs.login()
+                if lg.error_code != '0':
+                    logger.warning(f"BaoStock登录失败: {lg.error_msg}")
+                    DATASOURCE_AVAILABLE["baostock"] = False
+                    return None
+                self._bs_logged_in = True
+
+            bs_code = self._get_bs_code(code)
+
+            # 计算日期范围
+            end_date = datetime.now().strftime("%Y-%m-%d")
+            start_date = (datetime.now() - timedelta(days=days + 10)).strftime("%Y-%m-%d")
+
+            for attempt in range(config.REQUEST_RETRY_TIMES):
+                try:
+                    # BaoStock分钟K线频率：5, 15, 30, 60
+                    rs = bs.query_history_k_data_plus(
+                        bs_code,
+                        "date,time,code,open,high,low,close,volume,amount,adjustflag",
+                        start_date=start_date,
+                        end_date=end_date,
+                        frequency="15",
+                        adjustflag="3"  # 前复权
+                    )
+
+                    if rs.error_code != '0':
+                        logger.warning(f"BaoStock查询失败: {rs.error_msg}")
+                        return None
+
+                    data_list = []
+                    while (rs.error_code == '0') & rs.next():
+                        data_list.append(rs.get_row_data())
+
+                    if not data_list:
+                        logger.warning(f"BaoStock: 股票 {code} K线数据为空")
+                        return None
+
+                    df = pd.DataFrame(data_list, columns=rs.fields)
+
+                    # 标准化列名和格式
+                    df = df.rename(columns={
+                        "time": "time",
+                        "open": "open",
+                        "close": "close",
+                        "high": "high",
+                        "low": "low",
+                        "volume": "volume"
+                    })
+
+                    # 时间格式：BaoStock返回的是 "20260302094500000"，需要解析
+                    # 格式：日期(8位) + 时间(6位) + 毫秒(4位)
+                    def parse_bs_time(time_str: str) -> str:
+                        if len(time_str) >= 14:
+                            date_part = time_str[:8]  # 20260302
+                            time_part = time_str[8:14]  # 094500
+                            return f"{date_part[:4]}-{date_part[4:6]}-{date_part[6:8]} {time_part[:2]}:{time_part[2:4]}"
+                        return time_str
+
+                    df["time"] = df["time"].apply(parse_bs_time)
+
+                    # 数值转换
+                    for col in ["open", "close", "high", "low", "volume"]:
+                        df[col] = pd.to_numeric(df[col], errors="coerce")
+
+                    # 只保留需要的天数
+                    df["date_only"] = df["time"].str[:10]
+                    recent_dates = df["date_only"].unique()[-days:]
+                    df = df[df["date_only"].isin(recent_dates)]
+                    df = df.drop(columns=["date_only", "date", "code", "amount", "adjustflag"])
+
+                    self.kline_cache.set(code, df)
+                    logger.debug(f"BaoStock获取 {code} K线 {len(df)} 条")
+                    return df
+
+                except Exception as e:
+                    logger.warning(f"BaoStock获取 {code} 失败 (尝试 {attempt+1}): {e}")
+                    if attempt < config.REQUEST_RETRY_TIMES - 1:
+                        time.sleep(1)
+
+            return None
+
+        except ImportError:
+            logger.warning("BaoStock未安装")
+            DATASOURCE_AVAILABLE["baostock"] = False
+            return None
+        except Exception as e:
+            logger.warning(f"BaoStock数据源不可用: {e}")
+            DATASOURCE_AVAILABLE["baostock"] = False
+            return None
+
+
+def _get_builtin_hs300() -> List[Dict[str, str]]:
+    """内置沪深300主要股票列表（备用）"""
+    # 沪深300部分主要股票
+    major_stocks = [
+        {"code": "600519", "name": "贵州茅台"},
+        {"code": "601318", "name": "中国平安"},
+        {"code": "600036", "name": "招商银行"},
+        {"code": "000001", "name": "平安银行"},
+        {"code": "000858", "name": "五粮液"},
+        {"code": "601166", "name": "兴业银行"},
+        {"code": "600000", "name": "浦发银行"},
+        {"code": "601398", "name": "工商银行"},
+        {"code": "601288", "name": "农业银行"},
+        {"code": "601939", "name": "建设银行"},
+        {"code": "601988", "name": "中国银行"},
+        {"code": "600276", "name": "恒瑞医药"},
+        {"code": "000333", "name": "美的集团"},
+        {"code": "002415", "name": "海康威视"},
+        {"code": "600887", "name": "伊利股份"},
+        {"code": "601012", "name": "隆基绿能"},
+        {"code": "600309", "name": "万华化学"},
+        {"code": "002352", "name": "顺丰控股"},
+        {"code": "600900", "name": "长江电力"},
+        {"code": "601888", "name": "中国中免"},
+    ]
+    logger.warning(f"使用内置 {len(major_stocks)} 只主要股票作为备用")
+    return major_stocks
+
+
+# 从config导入交易时间常量
+TRADING_MORNING_START = config.TRADING_MORNING_START
+TRADING_MORNING_END = config.TRADING_MORNING_END
+TRADING_AFTERNOON_START = config.TRADING_AFTERNOON_START
+TRADING_AFTERNOON_END = config.TRADING_AFTERNOON_END
