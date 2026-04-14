@@ -31,6 +31,15 @@ MA_LONG = 20  # 长期均线周期（日）
 MA_SHORT_KLINES = MA_SHORT * 16  # 80
 MA_LONG_KLINES = MA_LONG * 16   # 320
 
+# 日K检测配置
+MA_SHORT_DAYS = 5  # 日K短期均线周期（天）
+MA_LONG_DAYS = 20  # 日K长期均线周期（天）
+DAILY_KLINE_DAYS = 30  # 获取日K天数（略多于MA20）
+
+# 日K均线所需K线数（日K：1天=1根）
+MA_SHORT_KLINES_DAILY = MA_SHORT_DAYS  # 5根
+MA_LONG_KLINES_DAILY = MA_LONG_DAYS   # 20根
+
 # 扫描配置
 SCAN_INTERVAL_HOURS = 1  # 扫描间隔（小时）- 备用配置
 SCAN_INTERVAL_SECONDS = SCAN_INTERVAL_HOURS * 3600
@@ -47,6 +56,17 @@ SCAN_TIMES = [
 # 收盘后扫描时间（指导次日购入）
 SCAN_AFTER_CLOSE = "15:05"  # 收盘后5分钟，获取完整数据
 
+# 日K检测时间窗口（16:00-19:00，间隔30分钟）
+DAILY_SCAN_TIMES = [
+    "16:00",
+    "16:30",
+    "17:00",
+    "17:30",
+    "18:00",
+    "18:30",
+    "19:00",
+]
+
 # 交易时间配置
 TRADING_MORNING_START = "09:30"
 TRADING_MORNING_END = "11:30"
@@ -59,6 +79,18 @@ HS300_CACHE_FILE = "data/hs300_stocks.json"
 NOTIFIED_STATE_FILE = "data/notified_state.json"
 KLINES_CACHE_DIR = "data/klines_cache"
 TRADE_DATE_CACHE_FILE = "data/trade_dates.json"
+
+# 日K缓存与状态文件
+DAILY_KLINES_CACHE_DIR = "data/daily_klines_cache"  # 日K缓存目录
+DAILY_SCAN_STATE_FILE = "data/daily_scan_state.json"  # 每日检测状态文件
+
+# 数据源配置
+# 分钟K线：TuShare（主源）+ BaoStock（备用）+ AkShare（备用）
+# AkShare默认不启用，易触发风控
+DATASOURCE_AVAILABLE = {"tushare": True, "baostock": True, "akshare": False}
+
+# 日K检测：仅BaoStock
+DATASOURCE_AVAILABLE_DAILY = {"tushare": False, "baostock": True, "akshare": False}
 
 # 网络配置
 REQUEST_RETRY_TIMES = 3

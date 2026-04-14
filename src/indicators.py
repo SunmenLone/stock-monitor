@@ -113,3 +113,27 @@ def get_cross_status(ma_short: pd.Series, ma_long: pd.Series) -> str:
         return "death_cross"
     else:
         return "neutral"
+
+
+def calculate_indicators_daily(klines: pd.DataFrame) -> Optional[Tuple[pd.Series, pd.Series]]:
+    """
+    计算日K线的均线指标
+
+    Args:
+        klines: 日K线数据（包含close列）
+
+    Returns:
+        (ma_short, ma_long) 或 None（数据不足）
+    """
+    import config
+
+    if klines is None or len(klines) < config.MA_LONG_KLINES_DAILY:
+        return None
+
+    close_prices = klines["close"]
+
+    # 使用日K均线周期（日K：1天=1根K线）
+    ma_short = calculate_ma(close_prices, config.MA_SHORT_KLINES_DAILY)  # 5根
+    ma_long = calculate_ma(close_prices, config.MA_LONG_KLINES_DAILY)   # 20根
+
+    return ma_short, ma_long

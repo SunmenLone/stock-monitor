@@ -296,6 +296,136 @@ class DingDingNotifier:
 
         return self.send_markdown(title, content)
 
+    def notify_daily_scan_start(self, total: int, pending: int, fetched: int) -> bool:
+        """
+        发送日K检测开始通知
+
+        Args:
+            total: 总股票数
+            pending: 待检测股票数
+            fetched: 已拉取股票数
+
+        Returns:
+            是否成功
+        """
+        now = datetime.now().strftime("%Y-%m-%d %H:%M")
+
+        title = "🔍 日K金叉检测启动"
+
+        content = f"""## 🔍 日K金叉检测启动
+
+**时间**: {now}
+
+**总股票**: {total}只
+
+**已拉取**: {fetched}只
+
+**待检测**: {pending}只
+
+---
+
+系统正在检测沪深300日K金叉信号，请稍候..."""
+
+        return self.send_markdown(title, content)
+
+    def notify_daily_scan_complete(self, result: Dict) -> bool:
+        """
+        发送日K检测完成通知
+
+        Args:
+            result: 检测结果，包含 completed, total, detected_count, pending_count, signals_count
+
+        Returns:
+            是否成功
+        """
+        url = self._build_url()
+        if not url:
+            logger.error("未配置钉钉Webhook URL")
+            return False
+
+        now = datetime.now().strftime("%Y-%m-%d %H:%M")
+
+        completed = result.get("completed", False)
+        status_text = "已完成（当天不再检测）" if completed else "未完成（下次继续）"
+
+        signals_count = result.get("signals_count", 0)
+        if signals_count > 0:
+            title = f"✅ 日K金叉检测完成 ({signals_count}只金叉)"
+            status_line = f"**金叉信号**: 📊 {signals_count} 只"
+        else:
+            title = "✅ 日K金叉检测完成"
+            status_line = "**金叉信号**: 未发现符合条件的股票"
+
+        content = f"""## {title}
+
+**完成时间**: {now}
+
+**总股票**: {result.get('total', 0)}只
+
+**完成检测**: {result.get('detected_count', 0)}只
+
+**待检测**: {result.get('pending_count', 0)}只
+
+**耗时**: {result.get('elapsed', 0):.1f}秒
+
+---
+
+**当日状态**: {status_text}
+
+{status_line}"""
+
+        return self.send_markdown(title, content)
+
+    def notify_golden_cross_daily(self, signals: List[Dict]) -> bool:
+        """
+        发送日K金叉信号通知
+
+        Args:
+            signals: 金叉信号列表，包含 code, name, ma5, ma20, close, date
+
+        Returns:
+            是否成功
+        """
+        if not signals:
+            logger.info("无日K金叉信号，不发送通知")
+            return True
+
+        now = datetime.now().strftime("%Y-%m-%d %H:%M")
+
+        title = f"📊 日K金叉信号 ({len(signals)}只)"
+
+        lines = [
+            f"## 📊 日K金叉信号检测",
+            f"",
+            f"**检测时间**: {now}",
+            f"**信号数量**: {len(signals)}只",
+            f"",
+            "---",
+            f""
+        ]
+
+        for sig in signals:
+            code = sig.get("code", "")
+            name = sig.get("name", "")
+            close = sig.get("close", 0)
+            ma5 = sig.get("ma5", 0)
+            ma20 = sig.get("ma20", 0)
+            sig_date = sig.get("date", "")
+
+            diff_pct = ((ma5 - ma20) / ma20) * 100 if ma20 > 0 else 0
+
+            lines.append(f"### {name} ({code})")
+            lines.append(f"- 当前价: **{close:.2f}**")
+            lines.append(f"- MA5: {ma5:.2f}")
+            lines.append(f"- MA20: {ma20:.2f}")
+            lines.append(f"- 均线差: +{diff_pct:.2f}%")
+            lines.append(f"- K线日期: {sig_date}")
+            lines.append(f"")
+
+        content = "\n".join(lines)
+
+        return self.send_markdown(title, content)
+
 
 def create_notifier() -> DingDingNotifier:
     """创建通知器实例"""

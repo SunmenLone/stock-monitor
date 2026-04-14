@@ -502,7 +502,7 @@ class DataSource:
             return None
 
     def _get_klines_baostock(self, code: str, days: int) -> Optional[pd.DataFrame]:
-        """从BaoStock获取K线"""
+        """从BaoStock获取分钟K线"""
         try:
             import baostock as bs
 
@@ -579,7 +579,7 @@ class DataSource:
                     df = df.drop(columns=["date_only", "date", "code", "amount", "adjustflag"])
 
                     self.kline_cache.set(code, df)
-                    logger.debug(f"BaoStock获取 {code} K线 {len(df)} 条")
+                    logger.debug(f"BaoStock获取 {code} 分钟K线 {len(df)} 条")
                     return df
 
                 except Exception as e:
@@ -596,6 +596,110 @@ class DataSource:
         except Exception as e:
             logger.warning(f"BaoStock数据源不可用: {e}")
             DATASOURCE_AVAILABLE["baostock"] = False
+            return None
+
+    def get_stock_daily_klines(self, code: str, days: int = None) -> Optional[pd.DataFrame]:
+        """
+        获取单只股票的日K线数据（仅BaoStock）
+
+        Args:
+            code: 股票代码（如"000001"）
+            days: 获取天数
+
+        Returns:
+            DataFrame with columns: time, open, close, high, low, volume
+        """
+        if days is None:
+            days = config.DAILY_KLINE_DAYS
+
+        logger.debug(f"获取股票 {code} 日K线...")
+
+        # 仅使用BaoStock（根据配置）
+        if not config.DATASOURCE_AVAILABLE_DAILY.get("baostock", False):
+            logger.warning("日K数据源BaoStock未启用")
+            return None
+
+        return self._get_daily_klines_baostock(code, days)
+
+    def _get_daily_klines_baostock(self, code: str, days: int) -> Optional[pd.DataFrame]:
+        """从BaoStock获取日K线"""
+        try:
+            import baostock as bs
+
+            # 登录
+            if not self._bs_logged_in:
+                lg = bs.login()
+                if lg.error_code != '0':
+                    logger.warning(f"BaoStock登录失败: {lg.error_msg}")
+                    return None
+                self._bs_logged_in = True
+
+            bs_code = self._get_bs_code(code)
+
+            # 计算日期范围（多获取几天确保数据充足）
+            end_date = datetime.now().strftime("%Y-%m-%d")
+            start_date = (datetime.now() - timedelta(days=days + 15)).strftime("%Y-%m-%d")
+
+            for attempt in range(config.REQUEST_RETRY_TIMES):
+                try:
+                    # BaoStock日K线：frequency="d"
+                    rs = bs.query_history_k_data_plus(
+                        bs_code,
+                        "date,code,open,high,low,close,volume,amount,adjustflag",
+                        start_date=start_date,
+                        end_date=end_date,
+                        frequency="d",  # 日K
+                        adjustflag="3"  # 前复权
+                    )
+
+                    if rs.error_code != '0':
+                        logger.warning(f"BaoStock查询日K失败: {rs.error_msg}")
+                        return None
+
+                    data_list = []
+                    while (rs.error_code == '0') & rs.next():
+                        data_list.append(rs.get_row_data())
+
+                    if not data_list:
+                        logger.warning(f"BaoStock: 股票 {code} 日K数据为空")
+                        return None
+
+                    df = pd.DataFrame(data_list, columns=rs.fields)
+
+                    # 标准化列名和格式
+                    # BaoStock日K返回字段: date, code, open, high, low, close, volume, amount, adjustflag
+                    df = df.rename(columns={
+                        "date": "time"
+                    })
+
+                    # 数值转换
+                    for col in ["open", "close", "high", "low", "volume"]:
+                        df[col] = pd.to_numeric(df[col], errors="coerce")
+
+                    # 只保留需要的天数（最近days条）
+                    df = df.tail(days)
+
+                    # 删除不需要的列
+                    df = df.drop(columns=["code", "amount", "adjustflag"], errors='ignore')
+
+                    # 确保时间格式为 "YYYY-MM-DD"
+                    df["time"] = df["time"].astype(str)
+
+                    logger.debug(f"BaoStock获取 {code} 日K线 {len(df)} 条")
+                    return df
+
+                except Exception as e:
+                    logger.warning(f"BaoStock获取 {code} 日K失败 (尝试 {attempt+1}): {e}")
+                    if attempt < config.REQUEST_RETRY_TIMES - 1:
+                        time.sleep(1)
+
+            return None
+
+        except ImportError:
+            logger.warning("BaoStock未安装")
+            return None
+        except Exception as e:
+            logger.warning(f"BaoStock日K数据源不可用: {e}")
             return None
 
 
