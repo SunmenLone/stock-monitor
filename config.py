@@ -10,6 +10,9 @@ load_dotenv()
 DINGDING_WEBHOOK = os.getenv("DINGDING_WEBHOOK", "")
 DINGDING_SECRET = os.getenv("DINGDING_SECRET", "")  # 可选签名密钥
 
+# TuShare配置（主数据源）
+TUSHARE_TOKEN = os.getenv("TUSHARE_TOKEN", "")  # 注册获取: https://tushare.pro
+
 # 阿里云OSS配置
 OSS_ACCESS_KEY_ID = os.getenv("OSS_ACCESS_KEY_ID", "")
 OSS_ACCESS_KEY_SECRET = os.getenv("OSS_ACCESS_KEY_SECRET", "")

@@ -1,5 +1,5 @@
 """
-股票数据获取模块 - 多数据源支持（BaoStock主源 + AkShare备用）
+股票数据获取模块 - 多数据源支持（TuShare主源 + BaoStock备用 + AkShare备用）
 """
 import json
 import logging
@@ -16,7 +16,7 @@ from src.cache import KlineCache
 logger = logging.getLogger(__name__)
 
 # 数据源状态
-DATASOURCE_AVAILABLE = {"akshare": True, "baostock": True}
+DATASOURCE_AVAILABLE = {"tushare": True, "baostock": True, "akshare": True}
 
 
 class DataSource:
@@ -26,6 +26,7 @@ class DataSource:
         self.kline_cache = KlineCache()
         self._trade_dates: Optional[Set[str]] = None
         self._bs_logged_in = False
+        self._ts_pro = None  # TuShare pro接口
 
     def _get_bs_code(self, code: str) -> str:
         """转换为BaoStock代码格式（sh/sz前缀）"""
@@ -33,6 +34,38 @@ class DataSource:
             return f"sh.{code}"
         else:
             return f"sz.{code}"
+
+    def _get_ts_code(self, code: str) -> str:
+        """转换为TuShare代码格式（SZ/SH后缀）"""
+        if code.startswith("6"):
+            return f"{code}.SH"
+        else:
+            return f"{code}.SZ"
+
+    def _init_tushare(self):
+        """初始化TuShare pro接口"""
+        if self._ts_pro is not None:
+            return True
+
+        if not config.TUSHARE_TOKEN:
+            logger.warning("TuShare Token未配置")
+            DATASOURCE_AVAILABLE["tushare"] = False
+            return False
+
+        try:
+            import tushare as ts
+            ts.set_token(config.TUSHARE_TOKEN)
+            self._ts_pro = ts.pro_api()
+            logger.info("TuShare初始化成功")
+            return True
+        except ImportError:
+            logger.warning("TuShare未安装，请执行: pip install tushare")
+            DATASOURCE_AVAILABLE["tushare"] = False
+            return False
+        except Exception as e:
+            logger.warning(f"TuShare初始化失败: {e}")
+            DATASOURCE_AVAILABLE["tushare"] = False
+            return False
 
     def get_hs300_stocks(self) -> List[Dict[str, str]]:
         """
@@ -291,13 +324,17 @@ class DataSource:
         # 获取新数据
         new_df = None
 
-        # 尝试AkShare（主源，数据更实时）
-        if DATASOURCE_AVAILABLE["akshare"]:
-            new_df = self._get_klines_akshare(code, days)
+        # 尝试TuShare（主源，官方API稳定）
+        if DATASOURCE_AVAILABLE["tushare"]:
+            new_df = self._get_klines_tushare(code, days)
 
-        # 备用：使用BaoStock（AkShare失败时）
+        # 备用：使用BaoStock（TuShare失败时）
         if new_df is None and DATASOURCE_AVAILABLE["baostock"]:
             new_df = self._get_klines_baostock(code, days)
+
+        # 备用：使用AkShare（最后备用，易风控）
+        if new_df is None and DATASOURCE_AVAILABLE["akshare"]:
+            new_df = self._get_klines_akshare(code, days)
 
         if new_df is None:
             # API获取失败，返回缓存数据（即使可能过期）
@@ -339,6 +376,75 @@ class DataSource:
         combined = combined.sort_values("time").reset_index(drop=True)
 
         return combined
+
+    def _get_klines_tushare(self, code: str, days: int) -> Optional[pd.DataFrame]:
+        """从TuShare获取K线"""
+        # 初始化TuShare
+        if not self._init_tushare():
+            return None
+
+        try:
+            ts_code = self._get_ts_code(code)
+
+            # 计算日期范围
+            end_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            start_date = (datetime.now() - timedelta(days=days + 5)).strftime("%Y-%m-%d %H:%M:%S")
+
+            for attempt in range(config.REQUEST_RETRY_TIMES):
+                try:
+                    # TuShare分钟K线接口
+                    df = self._ts_pro.query(
+                        'stk_mins',
+                        ts_code=ts_code,
+                        start_date=start_date,
+                        end_date=end_date,
+                        freq='15min'
+                    )
+
+                    if df is None or df.empty:
+                        logger.warning(f"TuShare: 股票 {code} K线数据为空")
+                        return None
+
+                    # TuShare返回字段: ts_code, trade_time, open, high, low, close, vol, amount
+                    df = df.rename(columns={
+                        "trade_time": "time",
+                        "open": "open",
+                        "close": "close",
+                        "high": "high",
+                        "low": "low",
+                        "vol": "volume"
+                    })
+
+                    # 格式化时间: TuShare返回格式为 "2026-04-14 09:45:00"
+                    df["time"] = df["time"].astype(str)
+
+                    # 只保留需要的天数
+                    df["date_only"] = df["time"].str[:10]
+                    recent_dates = df["date_only"].unique()[-days:]
+                    df = df[df["date_only"].isin(recent_dates)]
+                    df = df.drop(columns=["date_only", "ts_code", "amount"], errors='ignore')
+
+                    # 数值转换
+                    for col in ["open", "close", "high", "low", "volume"]:
+                        df[col] = pd.to_numeric(df[col], errors="coerce")
+
+                    logger.debug(f"TuShare获取 {code} K线 {len(df)} 条")
+                    return df
+
+                except Exception as e:
+                    logger.warning(f"TuShare获取 {code} 失败 (尝试 {attempt+1}): {e}")
+                    if attempt < config.REQUEST_RETRY_TIMES - 1:
+                        # 指数退避
+                        wait_time = config.REQUEST_DELAY_ON_ERROR * (2 ** attempt)
+                        logger.debug(f"等待 {wait_time}秒后重试")
+                        time.sleep(wait_time)
+
+            return None
+
+        except Exception as e:
+            logger.warning(f"TuShare数据源不可用: {e}")
+            DATASOURCE_AVAILABLE["tushare"] = False
+            return None
 
     def _get_klines_akshare(self, code: str, days: int) -> Optional[pd.DataFrame]:
         """从AkShare获取K线"""
