@@ -20,15 +20,19 @@ class KlineCache:
     def __init__(self):
         self.cache_dir = Path(config.KLINES_CACHE_DIR)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
-        self._date = datetime.now().strftime("%Y-%m-%d")
 
     def _get_cache_path(self, code: str) -> Path:
         """获取缓存文件路径"""
         return self.cache_dir / f"{code}.json"
 
     def _is_expired(self, cache_date: str) -> bool:
-        """检查缓存是否过期（隔日清空）"""
-        return cache_date != self._date
+        """检查缓存是否过期（隔日清空）- 每次检查都获取当前日期"""
+        current_date = datetime.now().strftime("%Y-%m-%d")
+        return cache_date != current_date
+
+    def _get_current_date(self) -> str:
+        """获取当前日期"""
+        return datetime.now().strftime("%Y-%m-%d")
 
     def get(self, code: str) -> Optional[pd.DataFrame]:
         """
@@ -73,7 +77,7 @@ class KlineCache:
 
         try:
             data = {
-                "date": self._date,
+                "date": self._get_current_date(),
                 "klines": df.to_dict(orient="records")
             }
             cache_path.write_text(json.dumps(data, ensure_ascii=False))
