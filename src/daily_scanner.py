@@ -156,13 +156,14 @@ class DailyScanner:
         result = self.state.get_result()
         result["elapsed"] = elapsed
 
-        # 8. 播报完成统计
-        self.notifier.notify_daily_scan_complete(result)
-
-        # 9. 如果全部完成，标记当天已完成
+        # 8. 如果全部完成，标记当天已完成
         if result["pending_count"] == 0:
             self.state.mark_completed(date)
+            result["completed"] = True  # 更新结果状态
             logger.info(f"当天 {date} 检测完成，耗时 {elapsed:.1f}秒")
+
+        # 9. 播报完成统计
+        self.notifier.notify_daily_scan_complete(result)
 
         return result
 
