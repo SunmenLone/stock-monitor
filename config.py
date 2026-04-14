@@ -61,6 +61,11 @@ TRADE_DATE_CACHE_FILE = "data/trade_dates.json"
 REQUEST_RETRY_TIMES = 3
 REQUEST_TIMEOUT = 10  # 秒
 
+# 请求延迟配置（规避风控）
+REQUEST_DELAY_MIN = 1.0  # 最小延迟（秒）
+REQUEST_DELAY_MAX = 2.0  # 最大延迟（秒）- 随机范围
+REQUEST_DELAY_ON_ERROR = 5.0  # 失败后延迟（秒）
+
 # 日志配置
 LOG_DIR = "logs"
 LOG_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"

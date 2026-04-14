@@ -2,6 +2,7 @@
 股票扫描器模块
 """
 import logging
+import random
 import time
 from datetime import datetime
 from typing import List, Dict, Optional
@@ -14,6 +15,11 @@ from src.notifier import create_notifier
 import config
 
 logger = logging.getLogger(__name__)
+
+
+def _random_delay() -> float:
+    """生成随机延迟时间"""
+    return random.uniform(config.REQUEST_DELAY_MIN, config.REQUEST_DELAY_MAX)
 
 
 class Scanner:
@@ -116,11 +122,13 @@ class Scanner:
                 if death_cross:
                     logger.info(f"{code}({name}) 检测到死叉")
 
-                # 避免请求过快
-                time.sleep(0.1)
+                # 随机延迟，避免请求过快触发风控
+                time.sleep(_random_delay())
 
             except Exception as e:
                 logger.warning(f"扫描 {code}({name}) 异常: {e}")
+                # 失败后额外延迟
+                time.sleep(config.REQUEST_DELAY_ON_ERROR)
                 continue
 
         elapsed = time.time() - start_time

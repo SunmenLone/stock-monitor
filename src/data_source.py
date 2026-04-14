@@ -377,7 +377,10 @@ class DataSource:
                 except Exception as e:
                     logger.warning(f"AkShare获取 {code} 失败 (尝试 {attempt+1}): {e}")
                     if attempt < config.REQUEST_RETRY_TIMES - 1:
-                        time.sleep(1)
+                        # 指数退避：1秒, 2秒, 4秒...
+                        wait_time = config.REQUEST_DELAY_ON_ERROR * (2 ** attempt)
+                        logger.debug(f"等待 {wait_time}秒后重试")
+                        time.sleep(wait_time)
 
             return None
 
