@@ -87,8 +87,8 @@ class DailyScanner:
             # 清理过期缓存
             self.cache.clear_expired()
 
-        # 3. 获取待检测股票列表
-        pending_codes = self.state.get_pending_stocks()
+        # 3. 获取待检测股票列表（使用副本，避免遍历中修改原列表）
+        pending_codes = list(self.state.get_pending_stocks())
         total = self.state.get_result()["total"]
 
         # 4. 获取股票名称映射（用于播报）
