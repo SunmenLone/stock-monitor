@@ -16,7 +16,9 @@ from src.cache import KlineCache
 logger = logging.getLogger(__name__)
 
 # 数据源状态
-DATASOURCE_AVAILABLE = {"tushare": True, "baostock": True, "akshare": True}
+# TuShare（主源）和BaoStock（备用）默认启用
+# AkShare（备用）默认不启用，易触发风控，需手动开启
+DATASOURCE_AVAILABLE = {"tushare": True, "baostock": True, "akshare": False}
 
 
 class DataSource:
