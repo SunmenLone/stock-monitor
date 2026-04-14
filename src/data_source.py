@@ -161,7 +161,7 @@ class DataSource:
         """
         cache_path = Path(config.TRADE_DATE_CACHE_FILE)
 
-        # 检查缓存有效性：年份匹配 + 缓存包含今天或更新的日期
+        # 检查缓存有效性
         if cache_path.exists():
             cache_data = json.loads(cache_path.read_text())
             cache_year = cache_data.get("year", 0)
@@ -170,15 +170,22 @@ class DataSource:
 
             if cache_year == current_year:
                 dates_list = cache_data.get("dates", [])
+                initialized = cache_data.get("initialized", False)
                 if dates_list:
                     # 检查缓存是否包含今天
                     if today_str in dates_list:
                         logger.info(f"使用交易日历缓存（包含今日 {today_str}）")
                         return set(dates_list)
                     else:
-                        # 缓存不包含今天，需要刷新获取最新交易日历
-                        latest_date_str = max(dates_list)
-                        logger.info(f"交易日历缓存缺少今日 {today_str}（最新: {latest_date_str}），需要刷新")
+                        # 今天不在缓存中
+                        if initialized:
+                            # 已初始化，今天是非交易日，使用缓存
+                            logger.info(f"今日 {today_str} 非交易日（交易日历已初始化）")
+                            return set(dates_list)
+                        else:
+                            # 未初始化，需要拉取完整交易日列表
+                            latest_date_str = max(dates_list)
+                            logger.info(f"交易日历未初始化，缺少今日 {today_str}（最新: {latest_date_str}），需要刷新")
                 else:
                     logger.warning("交易日历缓存数据为空")
 
@@ -195,9 +202,10 @@ class DataSource:
                         dates.append(rs.get_row_data()[0])
 
                     current_year_dates = [d for d in dates if d.startswith(str(datetime.now().year))]
-                    cache_data = {"year": datetime.now().year, "dates": current_year_dates}
+                    # 写入缓存，标记已初始化
+                    cache_data = {"year": datetime.now().year, "dates": current_year_dates, "initialized": True}
                     cache_path.write_text(json.dumps(cache_data, indent=2))
-                    logger.info(f"BaoStock获取 {len(current_year_dates)} 个交易日")
+                    logger.info(f"BaoStock获取 {len(current_year_dates)} 个交易日，已初始化")
                     return set(current_year_dates)
                 else:
                     logger.warning(f"BaoStock登录失败: {lg.error_msg}")
@@ -214,9 +222,10 @@ class DataSource:
                 dates = df["trade_date"].astype(str).tolist()
                 current_year_dates = [d for d in dates if d.startswith(str(datetime.now().year))]
 
-                cache_data = {"year": datetime.now().year, "dates": current_year_dates}
+                # 写入缓存，标记已初始化
+                cache_data = {"year": datetime.now().year, "dates": current_year_dates, "initialized": True}
                 cache_path.write_text(json.dumps(cache_data, indent=2))
-                logger.info(f"AkShare获取 {len(current_year_dates)} 个交易日")
+                logger.info(f"AkShare获取 {len(current_year_dates)} 个交易日，已初始化")
                 return set(current_year_dates)
             except Exception as e:
                 logger.warning(f"AkShare获取交易日历失败: {e}")
