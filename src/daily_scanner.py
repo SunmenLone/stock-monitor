@@ -2,7 +2,6 @@
 日K线扫描器模块
 """
 import logging
-import random
 import time
 from datetime import datetime
 from typing import Dict, List, Optional
@@ -15,28 +14,6 @@ from src.indicators import calculate_indicators_daily, detect_cross, get_current
 from src.notifier import create_notifier
 
 logger = logging.getLogger(__name__)
-
-
-def _random_delay() -> float:
-    """生成随机延迟时间"""
-    return random.uniform(config.REQUEST_DELAY_MIN, config.REQUEST_DELAY_MAX)
-
-
-class DailyScanner:
-    """日K线扫描器"""
-
-    def __init__(self):
-        self.data_source = DataSource()
-        self.cache = DailyKlineCache()
-        self.state = DailyScanState()
-        self.notifier = create_notifier()
-
-logger = logging.getLogger(__name__)
-
-
-def _random_delay() -> float:
-    """生成随机延迟时间"""
-    return random.uniform(config.REQUEST_DELAY_MIN, config.REQUEST_DELAY_MAX)
 
 
 class DailyScanner:
@@ -169,12 +146,8 @@ class DailyScanner:
                 # 更新进度
                 self.state.update_progress(code, signal)
 
-                # 随机延迟
-                time.sleep(_random_delay())
-
             except Exception as e:
                 logger.warning(f"检测 {code}({name}) 异常: {e}")
-                time.sleep(config.REQUEST_DELAY_ON_ERROR)
                 continue
 
         elapsed = time.time() - start_time
