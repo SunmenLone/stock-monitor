@@ -291,13 +291,13 @@ class DataSource:
         # 获取新数据
         new_df = None
 
-        # 尝试BaoStock（主源）
-        if DATASOURCE_AVAILABLE["baostock"]:
-            new_df = self._get_klines_baostock(code, days)
-
-        # 备用：使用AkShare
-        if new_df is None and DATASOURCE_AVAILABLE["akshare"]:
+        # 尝试AkShare（主源，数据更实时）
+        if DATASOURCE_AVAILABLE["akshare"]:
             new_df = self._get_klines_akshare(code, days)
+
+        # 备用：使用BaoStock（AkShare失败时）
+        if new_df is None and DATASOURCE_AVAILABLE["baostock"]:
+            new_df = self._get_klines_baostock(code, days)
 
         if new_df is None:
             # API获取失败，返回缓存数据（即使可能过期）
