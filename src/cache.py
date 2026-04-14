@@ -121,7 +121,7 @@ class KlineCache:
             code: 股票代码
 
         Returns:
-            DataFrame 或 None（无缓存或已过期）
+            DataFrame 或 None（无缓存）
         """
         result = self.get_with_check(code)
         return result.get("data")
@@ -154,12 +154,6 @@ class KlineCache:
 
         try:
             raw_data = json.loads(cache_path.read_text())
-            cache_date = raw_data.get("date", "")
-
-            if self._is_expired(cache_date):
-                logger.debug(f"缓存 {code} 已过期（隔日），删除")
-                cache_path.unlink()
-                return result
 
             df = pd.DataFrame(raw_data.get("klines", []))
             if df.empty:
@@ -173,7 +167,7 @@ class KlineCache:
             if not result["last_kline_time"]:
                 result["last_kline_time"] = self._extract_last_kline_time(df)
 
-            # 判断是否需要更新
+            # 判断是否需要更新（基于最后K线时间差，不删除缓存）
             result["needs_update"] = self._needs_update(result["last_kline_time"])
 
             return result
