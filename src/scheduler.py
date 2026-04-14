@@ -54,18 +54,33 @@ class Scheduler:
 
     def setup_schedule(self) -> None:
         """设置定时任务"""
-        # 每小时执行
-        # 使用schedule库
-        schedule.every(config.SCAN_INTERVAL_HOURS).hours.do(self._do_scan)
+        # 盘中扫描时间点
+        for scan_time in config.SCAN_TIMES:
+            schedule.every().day.at(scan_time).do(self._do_scan)
+            logger.info(f"盘中扫描任务已设置: {scan_time}")
 
-        # 或者更精确地在交易时间的整点执行
-        # 上午：10:30, 11:30
-        schedule.every().day.at("10:30").do(self._do_scan)
-        schedule.every().day.at("11:30").do(self._do_scan)
-        # 下午：14:00, 15:00（收盘前）
-        schedule.every().day.at("14:00").do(self._do_scan)
+        # 收盘后扫描（重置状态，指导次日购入）
+        schedule.every().day.at(config.SCAN_AFTER_CLOSE).do(self._do_scan_after_close)
+        logger.info(f"收盘后扫描任务已设置: {config.SCAN_AFTER_CLOSE}")
 
-        logger.info(f"定时任务已设置: 10:30, 11:30, 14:00 执行扫描")
+        logger.info(f"定时任务已设置: 盘中 {config.SCAN_TIMES}, 收盘后 {config.SCAN_AFTER_CLOSE}")
+
+    def _do_scan_after_close(self) -> None:
+        """收盘后执行扫描（重置状态，指导次日购入）"""
+        dt = datetime.now()
+
+        # 检查是否交易日
+        if not self.data_source.is_trade_day(dt):
+            logger.info(f"今日 {dt.strftime('%Y-%m-%d')} 不是交易日，跳过收盘后扫描")
+            return
+
+        logger.info(f"收盘后扫描触发: {dt.strftime('%Y-%m-%d %H:%M:%S')}")
+
+        try:
+            # 收盘后扫描重置状态，确保次日能看到新信号
+            self.backtrack_func()
+        except Exception as e:
+            logger.error(f"收盘后扫描任务执行异常: {e}")
 
     def run(self) -> None:
         """运行调度器"""

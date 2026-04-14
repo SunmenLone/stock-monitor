@@ -29,8 +29,20 @@ MA_SHORT_KLINES = MA_SHORT * 16  # 80
 MA_LONG_KLINES = MA_LONG * 16   # 320
 
 # 扫描配置
-SCAN_INTERVAL_HOURS = 1  # 扫描间隔（小时）
+SCAN_INTERVAL_HOURS = 1  # 扫描间隔（小时）- 备用配置
 SCAN_INTERVAL_SECONDS = SCAN_INTERVAL_HOURS * 3600
+
+# 盘中扫描时间点（交易时间内）
+SCAN_TIMES = [
+    "09:45",  # 开盘后15分钟
+    "10:30",  # 盘中检测
+    "11:15",  # 上午收盘前
+    "13:15",  # 下午开盘后
+    "14:30",  # 收盘前半小时
+]
+
+# 收盘后扫描时间（指导次日购入）
+SCAN_AFTER_CLOSE = "15:05"  # 收盘后5分钟，获取完整数据
 
 # 交易时间配置
 TRADING_MORNING_START = "09:30"
