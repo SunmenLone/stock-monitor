@@ -126,26 +126,24 @@ class DataSource:
         """
         cache_path = Path(config.TRADE_DATE_CACHE_FILE)
 
-        # 检查缓存有效性：年份匹配 + 最新日期距今不超过7天
+        # 检查缓存有效性：年份匹配 + 缓存包含今天或更新的日期
         if cache_path.exists():
             cache_data = json.loads(cache_path.read_text())
             cache_year = cache_data.get("year", 0)
             current_year = datetime.now().year
+            today_str = datetime.now().strftime("%Y-%m-%d")
 
             if cache_year == current_year:
                 dates_list = cache_data.get("dates", [])
                 if dates_list:
-                    latest_date_str = max(dates_list)
-                    try:
-                        latest_date = datetime.strptime(latest_date_str, "%Y-%m-%d")
-                        days_diff = (datetime.now() - latest_date).days
-                        if days_diff < 7:
-                            logger.info(f"使用交易日历缓存（最新日期: {latest_date_str}，距今{days_diff}天）")
-                            return set(dates_list)
-                        else:
-                            logger.info(f"交易日历缓存过期（最新日期距今{days_diff}天），需要刷新")
-                    except ValueError:
-                        logger.warning(f"缓存日期格式错误: {latest_date_str}")
+                    # 检查缓存是否包含今天
+                    if today_str in dates_list:
+                        logger.info(f"使用交易日历缓存（包含今日 {today_str}）")
+                        return set(dates_list)
+                    else:
+                        # 缓存不包含今天，需要刷新获取最新交易日历
+                        latest_date_str = max(dates_list)
+                        logger.info(f"交易日历缓存缺少今日 {today_str}（最新: {latest_date_str}），需要刷新")
                 else:
                     logger.warning("交易日历缓存数据为空")
 
