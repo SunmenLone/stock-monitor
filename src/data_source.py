@@ -598,13 +598,14 @@ class DataSource:
             DATASOURCE_AVAILABLE["baostock"] = False
             return None
 
-    def get_stock_daily_klines(self, code: str, days: int = None) -> Optional[pd.DataFrame]:
+    def get_stock_daily_klines(self, code: str, days: int = None, start_date: str = None) -> Optional[pd.DataFrame]:
         """
         获取单只股票的日K线数据（仅BaoStock）
 
         Args:
             code: 股票代码（如"000001"）
-            days: 获取天数
+            days: 获取天数（最大）
+            start_date: 增量拉取起始日期（可选，如"2026-04-10"）
 
         Returns:
             DataFrame with columns: time, open, close, high, low, volume
@@ -612,16 +613,16 @@ class DataSource:
         if days is None:
             days = config.DAILY_KLINE_DAYS
 
-        logger.debug(f"获取股票 {code} 日K线...")
+        logger.debug(f"获取股票 {code} 日K线..." + (f" 从{start_date}" if start_date else ""))
 
         # 仅使用BaoStock（根据配置）
         if not config.DATASOURCE_AVAILABLE_DAILY.get("baostock", False):
             logger.warning("日K数据源BaoStock未启用")
             return None
 
-        return self._get_daily_klines_baostock(code, days)
+        return self._get_daily_klines_baostock(code, days, start_date)
 
-    def _get_daily_klines_baostock(self, code: str, days: int) -> Optional[pd.DataFrame]:
+    def _get_daily_klines_baostock(self, code: str, days: int, start_date: str = None) -> Optional[pd.DataFrame]:
         """从BaoStock获取日K线"""
         try:
             import baostock as bs
@@ -636,9 +637,16 @@ class DataSource:
 
             bs_code = self._get_bs_code(code)
 
-            # 计算日期范围（多获取几天确保数据充足）
+            # 计算日期范围
             end_date = datetime.now().strftime("%Y-%m-%d")
-            start_date = (datetime.now() - timedelta(days=days + 15)).strftime("%Y-%m-%d")
+
+            # 增量拉取：从指定日期开始；否则从days天前开始
+            if start_date:
+                # 增量拉取模式：从缓存的最后日期开始
+                actual_start = start_date
+            else:
+                # 全量拉取模式：多获取几天确保数据充足
+                actual_start = (datetime.now() - timedelta(days=days + 15)).strftime("%Y-%m-%d")
 
             for attempt in range(config.REQUEST_RETRY_TIMES):
                 try:
@@ -646,7 +654,7 @@ class DataSource:
                     rs = bs.query_history_k_data_plus(
                         bs_code,
                         "date,code,open,high,low,close,volume,amount,adjustflag",
-                        start_date=start_date,
+                        start_date=actual_start,
                         end_date=end_date,
                         frequency="d",  # 日K
                         adjustflag="3"  # 前复权

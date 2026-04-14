@@ -112,14 +112,29 @@ class DailyScanner:
             try:
                 # 检查缓存
                 cached = self.cache.get_with_check(code)
-                klines = cached["data"]
+                old_klines = cached["data"]
+                last_kline_time = cached.get("last_kline_time")
 
-                # 缓存需要更新或不存在 -> 从数据源拉取
-                if cached["needs_update"] or klines is None:
-                    logger.debug(f"拉取 {code}({name}) 日K数据...")
-                    klines = self.data_source.get_stock_daily_klines(code)
-                    if klines is not None:
-                        self.cache.set(code, klines)
+                # 缓存需要更新或不存在 -> 从数据源增量拉取
+                if cached["needs_update"] or old_klines is None:
+                    # 增量拉取：传递最后K线日期
+                    logger.debug(f"拉取 {code}({name}) 日K数据..." + (f" 从{last_kline_time}" if last_kline_time else ""))
+                    new_klines = self.data_source.get_stock_daily_klines(
+                        code,
+                        start_date=last_kline_time  # 增量拉取起始日期
+                    )
+
+                    if new_klines is not None:
+                        # 合并新旧数据
+                        if old_klines is not None and not old_klines.empty:
+                            klines = self.cache.merge_and_set(code, old_klines, new_klines)
+                        else:
+                            self.cache.set(code, new_klines)
+                            klines = new_klines
+                    else:
+                        klines = old_klines  # 拉取失败，使用旧缓存
+                else:
+                    klines = old_klines  # 缓存有效，直接使用
 
                 if klines is None or klines.empty:
                     logger.warning(f"{code}({name}) 获取日K失败，跳过")

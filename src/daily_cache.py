@@ -201,6 +201,50 @@ class DailyKlineCache:
         except Exception as e:
             logger.warning(f"写入日K缓存 {code} 失败: {e}")
 
+    def merge_and_set(self, code: str, old_df: pd.DataFrame, new_df: pd.DataFrame, last_fetch_time: datetime = None) -> pd.DataFrame:
+        """
+        合并新旧日K数据并缓存
+
+        Args:
+            code: 股票代码
+            old_df: 旧K线DataFrame（缓存数据）
+            new_df: 新K线DataFrame（增量数据）
+            last_fetch_time: 上次API请求时间，默认为当前时间
+
+        Returns:
+            合并后的DataFrame
+        """
+        if last_fetch_time is None:
+            last_fetch_time = datetime.now()
+
+        try:
+            # 合并数据
+            if old_df is None or old_df.empty:
+                merged_df = new_df
+            elif new_df is None or new_df.empty:
+                merged_df = old_df
+            else:
+                merged_df = pd.concat([old_df, new_df], ignore_index=True)
+
+            # 按时间排序，去重（保留最新的）
+            merged_df = merged_df.drop_duplicates(subset=["time"], keep="last")
+            merged_df = merged_df.sort_values("time").reset_index(drop=True)
+
+            # 截取最近DAILY_KLINE_DAYS条
+            merged_df = merged_df.tail(config.DAILY_KLINE_DAYS)
+
+            # 写入缓存
+            self.set(code, merged_df, last_fetch_time)
+
+            logger.debug(f"合并 {code} 日K数据：旧{len(old_df) if old_df else 0}条 + 新{len(new_df) if new_df else 0}条 = {len(merged_df)}条")
+
+            return merged_df
+
+        except Exception as e:
+            logger.warning(f"合并日K缓存 {code} 失败: {e}")
+            # 失败时返回新数据
+            return new_df
+
     def clear_all(self) -> None:
         """清空所有缓存"""
         for file in self.cache_dir.glob("*.json"):
