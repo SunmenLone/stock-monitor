@@ -9,6 +9,7 @@ from typing import List, Dict, Optional
 from src.data_source import DataSource
 from src.indicators import calculate_indicators, detect_cross, get_current_values
 from src.state_manager import StateManager
+from src.notifier import create_notifier
 
 import config
 
@@ -21,6 +22,7 @@ class Scanner:
     def __init__(self):
         self.data_source = DataSource()
         self.state_manager = StateManager()
+        self.notifier = create_notifier()
 
     def scan(self, reference_date: Optional[str] = None) -> List[Dict]:
         """
@@ -42,6 +44,9 @@ class Scanner:
         # 获取沪深300股票列表
         stocks = self.data_source.get_hs300_stocks()
         total = len(stocks)
+
+        # 发送扫描开始通知
+        self.notifier.notify_scan_start(total)
 
         for i, stock in enumerate(stocks, 1):
             code = stock["code"]

@@ -138,6 +138,32 @@ class DingDingNotifier:
             logger.error(f"发送钉钉消息异常: {e}")
             return False
 
+    def notify_scan_start(self, stock_count: int = 300) -> bool:
+        """
+        发送扫描开始通知
+
+        Args:
+            stock_count: 待扫描股票数量
+
+        Returns:
+            是否成功
+        """
+        now = datetime.now().strftime("%Y-%m-%d %H:%M")
+
+        title = "🔍 沪深300扫描启动"
+
+        content = f"""## 🔍 沪深300均线交叉检测
+
+**启动时间**: {now}
+
+**扫描范围**: 沪深300 ({stock_count}只股票)
+
+---
+
+系统正在扫描检测金叉信号，请稍候..."""
+
+        return self.send_markdown(title, content)
+
     def notify_golden_cross(self, signals: List[Dict]) -> bool:
         """
         发送金叉信号通知（含均线图表）
