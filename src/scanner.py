@@ -24,7 +24,7 @@ class Scanner:
         self.state_manager = StateManager()
         self.notifier = create_notifier()
 
-    def scan(self, reference_date: Optional[str] = None) -> List[Dict]:
+    def scan(self, reference_date: Optional[str] = None) -> Dict:
         """
         扫描沪深300股票，检测金叉信号
 
@@ -33,8 +33,13 @@ class Scanner:
                            格式如 "2024-01-15"，None表示使用全部数据
 
         Returns:
-            [{"code": "000001", "name": "平安银行", "ma_short": 10.5, "ma_long": 10.3,
-              "close": 10.8, "klines": DataFrame, "ma_short_series": Series, "ma_long_series": Series}, ...]
+            {
+                "signals": [{"code": "000001", "name": "平安银行", ...}, ...],
+                "total": 300,  # 总股票数
+                "success": 298,  # 成功扫描数
+                "elapsed": 45.2,  # 耗时秒数
+                "reference_date": "2024-01-15"  # 参考日期
+            }
         """
         logger.info(f"开始扫描沪深300股票... (参考日期: {reference_date or '全部数据'})")
         start_time = time.time()
@@ -48,6 +53,7 @@ class Scanner:
         # 发送扫描开始通知
         self.notifier.notify_scan_start(total)
 
+        success_count = 0
         for i, stock in enumerate(stocks, 1):
             code = stock["code"]
             name = stock["name"]
@@ -73,6 +79,7 @@ class Scanner:
                     logger.debug(f"{code} K线数据不足，跳过")
                     continue
 
+                success_count += 1
                 ma_short, ma_long = indicators
 
                 # 检测交叉
@@ -87,6 +94,7 @@ class Scanner:
                     if should_notify:
                         curr_ma_short, curr_ma_long = get_current_values(ma_short, ma_long)
                         close_price = klines["close"].iloc[-1]
+                        last_kline_time = klines["time"].iloc[-1]
 
                         results.append({
                             "code": code,
@@ -94,7 +102,8 @@ class Scanner:
                             "ma_short": curr_ma_short,
                             "ma_long": curr_ma_long,
                             "close": close_price,
-                            "time": klines["time"].iloc[-1],
+                            "time": last_kline_time,
+                            "data_time": last_kline_time[:16] if len(str(last_kline_time)) >= 16 else str(last_kline_time),
                             "klines": klines,
                             "ma_short_series": ma_short,
                             "ma_long_series": ma_long
@@ -115,11 +124,17 @@ class Scanner:
                 continue
 
         elapsed = time.time() - start_time
-        logger.info(f"扫描完成，耗时 {elapsed:.1f}秒，发现 {len(results)} 个金叉信号")
+        logger.info(f"扫描完成，耗时 {elapsed:.1f}秒，成功 {success_count}/{total}，发现 {len(results)} 个金叉信号")
 
-        return results
+        return {
+            "signals": results,
+            "total": total,
+            "success": success_count,
+            "elapsed": elapsed,
+            "reference_date": reference_date
+        }
 
-    def run_single_scan(self, force_backtrack: bool = False, reset_state: bool = False) -> List[Dict]:
+    def run_single_scan(self, force_backtrack: bool = False, reset_state: bool = False) -> Dict:
         """
         执行单次扫描
 
@@ -130,7 +145,13 @@ class Scanner:
             reset_state: 是否重置状态（启动扫描时使用，允许重新通知）
 
         Returns:
-            金叉信号列表
+            {
+                "signals": [...],  # 金叉信号列表
+                "total": 300,
+                "success": 298,
+                "elapsed": 45.2,
+                "reference_date": "2024-01-15"
+            }
         """
         # 启动扫描时重置状态，允许重新通知
         if reset_state:

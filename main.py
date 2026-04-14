@@ -54,15 +54,33 @@ def main() -> None:
 
     def scan_and_notify() -> None:
         """扫描并发送通知（定时任务使用，不重置状态）"""
-        signals = scanner.run_single_scan(force_backtrack=False, reset_state=False)
-        if signals:
-            notifier.notify_golden_cross(signals)
+        result = scanner.run_single_scan(force_backtrack=False, reset_state=False)
+        # 发送扫描完成通知（无论是否有信号）
+        notifier.notify_scan_complete(
+            total_scanned=result["total"],
+            success_scanned=result["success"],
+            signal_count=len(result["signals"]),
+            elapsed_seconds=result["elapsed"],
+            reference_date=result["reference_date"]
+        )
+        # 如果有金叉信号，发送详细通知
+        if result["signals"]:
+            notifier.notify_golden_cross(result["signals"])
 
     def backtrack_and_notify() -> None:
         """回溯扫描并发送通知（启动时使用，重置状态允许重新通知）"""
-        signals = scanner.run_single_scan(force_backtrack=True, reset_state=True)
-        if signals:
-            notifier.notify_golden_cross(signals)
+        result = scanner.run_single_scan(force_backtrack=True, reset_state=True)
+        # 发送扫描完成通知（无论是否有信号）
+        notifier.notify_scan_complete(
+            total_scanned=result["total"],
+            success_scanned=result["success"],
+            signal_count=len(result["signals"]),
+            elapsed_seconds=result["elapsed"],
+            reference_date=result["reference_date"]
+        )
+        # 如果有金叉信号，发送详细通知
+        if result["signals"]:
+            notifier.notify_golden_cross(result["signals"])
 
     # 创建调度器（启动时回溯，定时任务正常）
     scheduler = Scheduler(scan_and_notify, backtrack_and_notify)

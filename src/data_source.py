@@ -243,7 +243,7 @@ class DataSource:
 
     def get_stock_klines(self, code: str, days: int = None) -> Optional[pd.DataFrame]:
         """
-        获取单只股票的15分钟K线数据（多数据源）
+        获取单只股票的15分钟K线数据（多数据源 + 增量更新）
 
         Args:
             code: 股票代码（如"000001"）
@@ -257,32 +257,88 @@ class DataSource:
 
         logger.debug(f"获取股票 {code} 15分钟K线...")
 
-        # 检查缓存
-        cached_df = self.kline_cache.get(code)
-        if cached_df is not None:
-            last_time = cached_df["time"].max()
-            try:
-                last_dt = datetime.strptime(last_time[:16], "%Y-%m-%d %H:%M")
-                if datetime.now() - last_dt < timedelta(hours=1):
-                    logger.debug(f"使用缓存K线数据 {code}")
-                    return cached_df
-            except ValueError:
-                pass
+        # 检查缓存并判断是否需要更新
+        cached = self.kline_cache.get_with_check(code)
+
+        if cached["data"] is not None and not cached["needs_update"]:
+            logger.debug(f"使用缓存K线数据 {code}，无需更新")
+            return cached["data"]
+
+        # 需要更新或无缓存
+        if cached["data"] is not None:
+            logger.debug(f"缓存 {code} 需要增量更新")
+            # 计算增量查询的起始时间
+            # 优先级：last_fetch_time > last_kline_time > 从数据提取
+            last_time_str = cached.get("last_fetch_time") \
+                            or cached.get("last_kline_time")
+
+            if last_time_str:
+                try:
+                    # 解析时间并往前回溯30分钟
+                    if len(last_time_str) >= 16:
+                        last_time_str = last_time_str[:16]
+                    last_dt = datetime.strptime(last_time_str, "%Y-%m-%d %H:%M")
+                    start_dt = last_dt - timedelta(minutes=30)
+                    logger.debug(f"增量查询起始时间: {start_dt.strftime('%Y-%m-%d %H:%M')}")
+                except ValueError:
+                    start_dt = None
+            else:
+                start_dt = None
+        else:
+            start_dt = None
+            logger.debug(f"无缓存 {code}，全量查询")
+
+        # 获取新数据
+        new_df = None
 
         # 尝试BaoStock（主源）
         if DATASOURCE_AVAILABLE["baostock"]:
-            df = self._get_klines_baostock(code, days)
-            if df is not None:
-                return df
+            new_df = self._get_klines_baostock(code, days)
 
         # 备用：使用AkShare
-        if DATASOURCE_AVAILABLE["akshare"]:
-            df = self._get_klines_akshare(code, days)
-            if df is not None:
-                return df
+        if new_df is None and DATASOURCE_AVAILABLE["akshare"]:
+            new_df = self._get_klines_akshare(code, days)
 
-        logger.error(f"获取 {code} K线失败，所有数据源不可用")
-        return None
+        if new_df is None:
+            # API获取失败，返回缓存数据（即使可能过期）
+            if cached["data"] is not None:
+                logger.warning(f"获取 {code} 新数据失败，使用缓存数据")
+                return cached["data"]
+            logger.error(f"获取 {code} K线失败，所有数据源不可用")
+            return None
+
+        # 合并数据（如果有缓存）
+        if cached["data"] is not None:
+            merged_df = self._merge_klines(cached["data"], new_df)
+            self.kline_cache.set(code, merged_df, last_fetch_time=datetime.now())
+            logger.debug(f"合并 {code} K线数据，共 {len(merged_df)} 条")
+            return merged_df
+        else:
+            self.kline_cache.set(code, new_df, last_fetch_time=datetime.now())
+            return new_df
+
+    def _merge_klines(self, old_df: pd.DataFrame, new_df: pd.DataFrame) -> pd.DataFrame:
+        """
+        合并新旧K线数据，去重
+
+        Args:
+            old_df: 旧数据
+            new_df: 新数据
+
+        Returns:
+            合合并后的DataFrame
+        """
+        if old_df is None or old_df.empty:
+            return new_df
+        if new_df is None or new_df.empty:
+            return old_df
+
+        # 合并并按时间去重（保留最新的）
+        combined = pd.concat([old_df, new_df], ignore_index=True)
+        combined = combined.drop_duplicates(subset=["time"], keep="last")
+        combined = combined.sort_values("time").reset_index(drop=True)
+
+        return combined
 
     def _get_klines_akshare(self, code: str, days: int) -> Optional[pd.DataFrame]:
         """从AkShare获取K线"""

@@ -164,6 +164,59 @@ class DingDingNotifier:
 
         return self.send_markdown(title, content)
 
+    def notify_scan_complete(self, total_scanned: int, success_scanned: int,
+                              signal_count: int, elapsed_seconds: float,
+                              reference_date: str = None) -> bool:
+        """
+        发送扫描完成通知（无论是否有信号都发送）
+
+        Args:
+            total_scanned: 总扫描股票数
+            success_scanned: 成功扫描数
+            signal_count: 发现金叉信号数
+            elapsed_seconds: 扫描耗时（秒）
+            reference_date: 参考日期
+
+        Returns:
+            是否成功
+        """
+        url = self._build_url()
+        if not url:
+            logger.error("未配置钉钉Webhook URL")
+            return False
+
+        now = datetime.now().strftime("%Y-%m-%d %H:%M")
+
+        if signal_count > 0:
+            title = f"✅ 沪深300扫描完成 ({signal_count}只金叉)"
+            status_text = f"**发现信号**: 📊 {signal_count} 只金叉"
+        else:
+            title = "✅ 沪深300扫描完成"
+            status_text = "**发现信号**: 未发现符合条件的股票"
+
+        lines = [
+            f"## {title}",
+            f"",
+            f"**完成时间**: {now}",
+            f"**扫描范围**: 沪深300",
+            f"**扫描统计**: {success_scanned}/{total_scanned} 只",
+            f"**耗时**: {elapsed_seconds:.1f}秒",
+        ]
+
+        if reference_date:
+            lines.append(f"**参考日期**: {reference_date}")
+
+        lines.extend([
+            f"",
+            "---",
+            f"",
+            status_text,
+        ])
+
+        content = "\n".join(lines)
+
+        return self.send_markdown(title, content)
+
     def notify_golden_cross(self, signals: List[Dict]) -> bool:
         """
         发送金叉信号通知（含均线图表）
@@ -199,6 +252,7 @@ class DingDingNotifier:
             close = sig["close"]
             ma_short = sig["ma_short"]
             ma_long = sig["ma_long"]
+            data_time = sig.get("data_time", sig.get("time", "未知"))
 
             diff_pct = ((ma_short - ma_long) / ma_long) * 100
 
@@ -207,6 +261,7 @@ class DingDingNotifier:
             lines.append(f"- MA5: {ma_short:.2f}")
             lines.append(f"- MA20: {ma_long:.2f}")
             lines.append(f"- 均线差: +{diff_pct:.2f}%")
+            lines.append(f"- 数据时间: {data_time}")
 
             # 生成并嵌入图表
             if "klines" in sig and "ma_short_series" in sig:
