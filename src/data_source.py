@@ -129,7 +129,11 @@ class DataSource:
                     rs = bs.query_trade_dates()
                     dates = []
                     while (rs.error_code == '0') & rs.next():
-                        dates.append(rs.get_row_data()[0])
+                        row = rs.get_row_data()
+                        date = row[0]  # calendar_date
+                        is_trading = row[1]  # is_trading_day ("1"=交易日, "0"=非交易日)
+                        if is_trading == '1':  # 只保留交易日
+                            dates.append(date)
 
                     current_year_dates = [d for d in dates if d.startswith(str(datetime.now().year))]
                     cache_data = {"year": datetime.now().year, "dates": current_year_dates, "initialized": True}
