@@ -2,6 +2,24 @@
 
 指标与检测条件开发指南 - 如何扩展新的技术指标和检测条件。
 
+## 已实现的组件
+
+### 指标
+
+| 指标 | 输出字段 | 参数 | 文件 |
+|------|----------|------|------|
+| MA | MA{period} | period (默认: 5, 10, 20) | `src/indicators/ma.py` |
+| EMA | EMA{period} | period | `src/indicators/ma.py` |
+| MACD | DIF, DEA, MACD | fast=12, slow=26, signal=9 | `src/indicators/macd.py` |
+
+### 检测条件
+
+| 条件名称 | 所需指标 | 检测逻辑 | 文件 |
+|----------|----------|----------|------|
+| `golden_cross` | MA5, MA20 | MA5上穿MA20 | `src/detection/golden_cross.py` |
+| `death_cross` | MA5, MA20 | MA5下穿MA20 | `src/detection/golden_cross.py` |
+| `golden_cross_with_macd` | MA5, MA10, MA20, DIF | 金叉+DIF>0 或 DIF上穿+多头排列 | `src/detection/golden_cross_macd.py` |
+
 ## 概述
 
 系统采用插件化架构，新增指标或检测条件只需：

@@ -23,6 +23,7 @@ class DataSyncResult:
         data: Optional[pd.DataFrame],
         last_kline_time: Optional[str],
         is_updated: bool,
+        data_is_current: bool = False,
         error: Optional[str] = None
     ):
         self.code = code
@@ -30,11 +31,16 @@ class DataSyncResult:
         self.data = data
         self.last_kline_time = last_kline_time
         self.is_updated = is_updated  # 是否进行了数据更新
+        self.data_is_current = data_is_current  # 数据是否同步到当前日期
         self.error = error
 
     def has_data(self) -> bool:
         """是否有有效数据"""
         return self.data is not None and not self.data.empty
+
+    def is_data_current(self) -> bool:
+        """数据是否同步到当天"""
+        return self.data_is_current
 
     def to_dict(self) -> Dict:
         """转换为字典"""
@@ -62,6 +68,19 @@ class DataSyncService:
         self.data_source = DataSource()
         self.cache = DailyKlineCache()
 
+    def get_target_date(self) -> str:
+        """
+        获取目标日期（最新交易日）
+
+        用于判断数据是否完整：
+        - 启动时：使用最新交易日数据检测
+        - 定时触发：确保数据同步到最新交易日
+
+        Returns:
+            最新交易日字符串，如 "2026-04-14"
+        """
+        return self.data_source.get_latest_trade_date()
+
     def sync_stock_data(
         self,
         code: str,
@@ -79,6 +98,8 @@ class DataSyncService:
         Returns:
             DataSyncResult: 同步结果，包含数据和状态信息
         """
+        target_date = self.get_target_date()  # 使用最新交易日
+
         try:
             # 1. 检查缓存
             cached = self.cache.get_with_check(code)
@@ -91,13 +112,16 @@ class DataSyncService:
 
             if not should_fetch:
                 # 缓存有效，直接返回
+                # 检查数据是否同步到目标日期（最新交易日）
+                data_is_current = (last_kline_time == target_date)
                 logger.debug(f"{code}({name}) 缓存有效，无需更新")
                 return DataSyncResult(
                     code=code,
                     name=name,
                     data=old_data,
                     last_kline_time=last_kline_time,
-                    is_updated=False
+                    is_updated=False,
+                    data_is_current=data_is_current
                 )
 
             # 3. 增量拉取
@@ -121,9 +145,12 @@ class DataSyncService:
                 # 提取最新K线时间
                 new_last_time = self._extract_last_time(merged_data)
 
+                # 判断数据是否同步到目标日期（最新交易日）
+                data_is_current = (new_last_time == target_date)
+
                 logger.debug(
                     f"{code}({name}) 数据更新完成: " +
-                    f"旧{len(old_data) if old_data else 0}条 + 新{len(new_data)}条 = {len(merged_data)}条"
+                    f"旧{len(old_data) if old_data is not None else 0}条 + 新{len(new_data)}条 = {len(merged_data)}条"
                 )
 
                 return DataSyncResult(
@@ -131,18 +158,21 @@ class DataSyncService:
                     name=name,
                     data=merged_data,
                     last_kline_time=new_last_time,
-                    is_updated=True
+                    is_updated=True,
+                    data_is_current=data_is_current
                 )
             else:
                 # 拉取失败，使用旧缓存
                 if old_data is not None and not old_data.empty:
+                    data_is_current = (last_kline_time == target_date)
                     logger.warning(f"{code}({name}) 拉取新数据失败，使用旧缓存")
                     return DataSyncResult(
                         code=code,
                         name=name,
                         data=old_data,
                         last_kline_time=last_kline_time,
-                        is_updated=False
+                        is_updated=False,
+                        data_is_current=data_is_current
                     )
                 else:
                     logger.warning(f"{code}({name}) 获取数据失败，无缓存")
@@ -152,6 +182,7 @@ class DataSyncService:
                         data=None,
                         last_kline_time=None,
                         is_updated=False,
+                        data_is_current=False,
                         error="数据获取失败"
                     )
 
@@ -163,6 +194,7 @@ class DataSyncService:
                 data=None,
                 last_kline_time=None,
                 is_updated=False,
+                data_is_current=False,
                 error=str(e)
             )
 

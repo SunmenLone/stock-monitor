@@ -52,10 +52,19 @@ def main() -> None:
     # 日K检测模块（使用新架构的编排器）
     orchestrator = ScanOrchestrator()
 
-    def daily_scan_and_notify() -> None:
-        """日K检测并发送通知"""
-        result = orchestrator.orchestrate_daily_scan()
-        if result.get("signals"):
+    def daily_scan_and_notify(silent_mode: bool = False) -> None:
+        """日K检测并发送通知
+
+        Args:
+            silent_mode: 静默模式（启动时使用）
+                - True: 只播报信号通知（orchestrator内部处理）
+                - False: 正常播报（完成后额外发送详细信号通知）
+        """
+        result = orchestrator.orchestrate_daily_scan(silent_mode=silent_mode)
+
+        # 静默模式下，orchestrator已发送信号通知，无需重复
+        # 正常模式下，额外发送详细信号通知（完成通知只包含摘要）
+        if not silent_mode and result.get("signals"):
             notifier.notify_golden_cross_daily(result["signals"])
 
     # 创建日K调度器

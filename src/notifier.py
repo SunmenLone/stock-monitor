@@ -121,9 +121,9 @@ class DingDingNotifier:
         """发送日K检测开始通知"""
         now = datetime.now().strftime("%Y-%m-%d %H:%M")
 
-        title = "🔍 日K金叉检测启动"
+        title = "🔍 股票信号检测启动"
 
-        content = f"""## 🔍 日K金叉检测启动
+        content = f"""## 🔍 股票信号检测启动
 
 **时间**: {now}
 
@@ -135,7 +135,7 @@ class DingDingNotifier:
 
 ---
 
-系统正在检测沪深300日K金叉信号，请稍候..."""
+系统正在检测沪深300股票信号，请稍候..."""
 
         return self.send_markdown(title, content)
 
@@ -153,11 +153,11 @@ class DingDingNotifier:
 
         signals_count = result.get("signals_count", 0)
         if signals_count > 0:
-            title = f"✅ 日K金叉检测完成 ({signals_count}只金叉)"
-            status_line = f"**金叉信号**: 📊 {signals_count} 只"
+            title = f"✅ 股票信号检测完成 ({signals_count}只信号)"
+            status_line = f"**检测信号**: 📊 {signals_count} 只"
         else:
-            title = "✅ 日K金叉检测完成"
-            status_line = "**金叉信号**: 未发现符合条件的股票"
+            title = "✅ 股票信号检测完成"
+            status_line = "**检测信号**: 未发现符合条件的股票"
 
         content = f"""## {title}
 
@@ -179,18 +179,18 @@ class DingDingNotifier:
 
         return self.send_markdown(title, content)
 
-    def notify_golden_cross_daily(self, signals: List[Dict]) -> bool:
-        """发送日K金叉信号通知"""
+    def notify_signals(self, signals: List[Dict]) -> bool:
+        """发送信号通知"""
         if not signals:
-            logger.info("无日K金叉信号，不发送通知")
+            logger.info("无检测信号，不发送通知")
             return True
 
         now = datetime.now().strftime("%Y-%m-%d %H:%M")
 
-        title = f"📊 日K金叉信号 ({len(signals)}只)"
+        title = f"📊 检测信号 ({len(signals)}只)"
 
         lines = [
-            f"## 📊 日K金叉信号检测",
+            f"## 📊 检测信号",
             f"",
             f"**检测时间**: {now}",
             f"**信号数量**: {len(signals)}只",
@@ -204,22 +204,36 @@ class DingDingNotifier:
             name = sig.get("name", "")
             close = sig.get("close", 0)
             ma5 = sig.get("ma5", 0)
+            ma10 = sig.get("ma10", None)
             ma20 = sig.get("ma20", 0)
+            dif = sig.get("dif", None)
+            trigger_type = sig.get("trigger_type", "")
             sig_date = sig.get("date", "")
 
             diff_pct = ((ma5 - ma20) / ma20) * 100 if ma20 > 0 else 0
 
             lines.append(f"### {name} ({code})")
+            if trigger_type:
+                lines.append(f"- **触发条件**: {trigger_type}")
             lines.append(f"- 当前价: **{close:.2f}**")
             lines.append(f"- MA5: {ma5:.2f}")
+            if ma10 is not None:
+                lines.append(f"- MA10: {ma10:.2f}")
             lines.append(f"- MA20: {ma20:.2f}")
             lines.append(f"- 均线差: +{diff_pct:.2f}%")
+            if dif is not None:
+                lines.append(f"- DIF: {dif:.4f}")
             lines.append(f"- K线日期: {sig_date}")
             lines.append(f"")
 
         content = "\n".join(lines)
 
         return self.send_markdown(title, content)
+
+    # 向后兼容：保留原名方法
+    def notify_golden_cross_daily(self, signals: List[Dict]) -> bool:
+        """发送日K金叉信号通知（向后兼容）"""
+        return self.notify_signals(signals)
 
 
 def create_notifier() -> DingDingNotifier:

@@ -199,3 +199,46 @@ def create_default_detector_min15(
     ))
 
     return SignalDetector(signal_registry, indicator_engine)
+
+
+def create_detector_with_macd(
+    short_period: int = 5,
+    mid_period: int = 10,
+    long_period: int = 20,
+    fast_period: int = 12,
+    slow_period: int = 26,
+    signal_period: int = 9
+) -> SignalDetector:
+    """
+    创建包含MA和MACD复合检测的日K信号检测器
+
+    检测条件：
+    - 条件A：金叉且DIF>0
+    - 条件B：DIF上穿0轴且均线多头排列
+
+    Args:
+        short_period: 短期均线周期（默认5）
+        mid_period: 中期均线周期（默认10）
+        long_period: 长期均线周期（默认20）
+        fast_period: MACD快线周期（默认12）
+        slow_period: MACD慢线周期（默认26）
+        signal_period: MACD信号线周期（默认9）
+
+    Returns:
+        SignalDetector 实例
+    """
+    from src.indicators.engine import create_engine_with_macd
+    from src.detection.golden_cross_macd import GoldenCrossWithMACDCondition
+
+    # 创建包含MA和MACD的指标引擎
+    indicator_engine = create_engine_with_macd(
+        short_period, mid_period, long_period, fast_period, slow_period, signal_period
+    )
+
+    # 创建信号注册中心
+    signal_registry = SignalRegistry()
+    signal_registry.register(GoldenCrossWithMACDCondition(
+        short_period, mid_period, long_period, "daily_kline"
+    ))
+
+    return SignalDetector(signal_registry, indicator_engine)

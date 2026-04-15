@@ -14,8 +14,9 @@
 # 导出新框架组件
 from src.indicators.base import Indicator
 from src.indicators.registry import IndicatorRegistry, get_registry, reset_registry
-from src.indicators.engine import IndicatorEngine, create_default_engine_daily
+from src.indicators.engine import IndicatorEngine, create_default_engine_daily, create_engine_with_macd
 from src.indicators.ma import MAIndicator, EMAIndicator, create_ma_indicators_daily
+from src.indicators.macd import MACDIndicator, create_macd_indicator_daily
 
 # 导入原有函数（向后兼容）
 from src.indicators_legacy import (
@@ -49,10 +50,13 @@ __all__ = [
     "IndicatorEngine",
     "MAIndicator",
     "EMAIndicator",
+    "MACDIndicator",
     "get_registry",
     "reset_registry",
     "create_default_engine_daily",
+    "create_engine_with_macd",
     "create_ma_indicators_daily",
+    "create_macd_indicator_daily",
     "get_daily_indicator_engine",
     # 原有函数（向后兼容）
     "calculate_ma",

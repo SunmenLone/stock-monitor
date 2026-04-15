@@ -35,8 +35,12 @@ class IndicatorEngine:
         """
         批量计算指定指标
 
+        支持按指标名称或输出字段名查找：
+        - 如果传入指标名称（如'MA5'、'MACD'），计算该指标
+        - 如果传入输出字段名（如'DIF'），查找包含该字段的指标并计算
+
         Args:
-            indicator_names: 指标名称列表
+            indicator_names: 指标名称或输出字段名列表
             data: K线数据 DataFrame
 
         Returns:
@@ -45,10 +49,28 @@ class IndicatorEngine:
         """
         results = {}
 
+        # 构建查找映射：输出字段名 -> 指标名称
+        output_field_to_indicator = {}
+        for indicator in self.registry._indicators.values():
+            for field in indicator.output_fields:
+                output_field_to_indicator[field] = indicator.name
+
         for name in indicator_names:
+            # 先尝试直接查找指标
             indicator = self.registry.get(name)
+
+            # 如果找不到，尝试通过输出字段查找
+            if indicator is None:
+                indicator_name = output_field_to_indicator.get(name)
+                if indicator_name:
+                    indicator = self.registry.get(indicator_name)
+
             if indicator is None:
                 logger.warning(f"指标 {name} 未注册，跳过")
+                continue
+
+            # 如果该指标已计算过（多值指标的情况），跳过重复计算
+            if indicator.name in [self.registry.get(n).name if self.registry.get(n) else None for n in results.keys()]:
                 continue
 
             # 安全计算（带数据验证）
@@ -185,5 +207,41 @@ def create_default_engine_min15(
     registry = IndicatorRegistry()
     registry.register(MAIndicator(short_days * 16, "min15_kline"))
     registry.register(MAIndicator(long_days * 16, "min15_kline"))
+
+    return IndicatorEngine(registry)
+
+
+def create_engine_with_macd(
+    short_period: int = 5,
+    mid_period: int = 10,
+    long_period: int = 20,
+    fast_period: int = 12,
+    slow_period: int = 26,
+    signal_period: int = 9
+) -> IndicatorEngine:
+    """
+    创建包含MA和MACD的日K指标计算引擎
+
+    注册 MA5、MA10、MA20 和 MACD(DIF, DEA, MACD) 指标。
+
+    Args:
+        short_period: 短期均线周期（默认5）
+        mid_period: 中期均线周期（默认10）
+        long_period: 长期均线周期（默认20）
+        fast_period: MACD快线周期（默认12）
+        slow_period: MACD慢线周期（默认26）
+        signal_period: MACD信号线周期（默认9）
+
+    Returns:
+        IndicatorEngine 实例
+    """
+    from src.indicators.ma import MAIndicator
+    from src.indicators.macd import MACDIndicator
+
+    registry = IndicatorRegistry()
+    registry.register(MAIndicator(short_period, "daily_kline"))
+    registry.register(MAIndicator(mid_period, "daily_kline"))
+    registry.register(MAIndicator(long_period, "daily_kline"))
+    registry.register(MACDIndicator(fast_period, slow_period, signal_period, "daily_kline"))
 
     return IndicatorEngine(registry)

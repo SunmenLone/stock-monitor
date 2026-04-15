@@ -10,11 +10,12 @@ import pandas as pd
 
 import config
 from src.data_sync_service import DataSyncService, DataSyncResult
-from src.indicators.engine import IndicatorEngine, create_default_engine_daily
-from src.detection.detector import SignalDetector, create_default_detector_daily
+from src.indicators.engine import IndicatorEngine, create_engine_with_macd
+from src.detection.detector import SignalDetector, create_detector_with_macd
 from src.detection.base import Signal
 from src.daily_state import DailyScanState
 from src.notifier import create_notifier
+from src.data_source import DataSource
 
 logger = logging.getLogger(__name__)
 
@@ -45,17 +46,32 @@ class ScanOrchestrator:
     ):
         # 使用默认实现或自定义实现
         self.data_sync = data_sync or DataSyncService()
-        self.signal_detector = signal_detector or create_default_detector_daily()
+        self.signal_detector = signal_detector or create_detector_with_macd()
         self.state = state or DailyScanState()
         self.notifier = notifier or create_notifier()
+        self.data_source = DataSource()
 
-    def _get_current_date(self) -> str:
-        """获取当前日期"""
-        return datetime.now().strftime("%Y-%m-%d")
+    def _get_target_date(self) -> str:
+        """
+        获取目标日期（最新交易日）
 
-    def orchestrate_daily_scan(self) -> Dict:
+        用于：
+        1. 状态管理：判断是否新的一天需要重置
+        2. 数据完整性检查：数据需同步到目标日期
+
+        Returns:
+            最新交易日字符串，如 "2026-04-14"
+        """
+        return self.data_source.get_latest_trade_date()
+
+    def orchestrate_daily_scan(self, silent_mode: bool = False) -> Dict:
         """
         编排日K检测流程
+
+        Args:
+            silent_mode: 静默模式（启动时使用）
+                - True: 只播报信号通知，跳过启动/完成通知
+                - False: 正常播报所有通知
 
         流程:
         1. 检查是否已完成
@@ -79,12 +95,12 @@ class ScanOrchestrator:
                 "elapsed": float
             }
         """
-        date = self._get_current_date()
+        date = self._get_target_date()  # 使用最新交易日
         start_time = time.time()
 
         # 1. 检查是否已完成
         if self.state.is_completed(date):
-            logger.info(f"当天 {date} 已完成检测，跳过")
+            logger.info(f"目标日期 {date} 已完成检测，跳过")
             result = self.state.get_result()
             result["elapsed"] = 0
             return result
@@ -101,15 +117,19 @@ class ScanOrchestrator:
         total = self.state.get_result()["total"]
         stock_map = self.data_sync.get_stock_names()
 
-        # 4. 播报开始
-        result_before = self.state.get_result()
-        self.notifier.notify_daily_scan_start(
-            total=total,
-            pending=len(pending_codes),
-            fetched=result_before.get("fetched_count", 0)
-        )
+        # 4. 播报开始（静默模式跳过）
+        if not silent_mode:
+            result_before = self.state.get_result()
+            self.notifier.notify_daily_scan_start(
+                total=total,
+                pending=len(pending_codes),
+                fetched=result_before.get("fetched_count", 0)
+            )
 
-        logger.info(f"开始日K检测: {date}, 待检测 {len(pending_codes)} 只股票")
+        logger.info(f"开始日K检测: 目标日期 {date}, 待检测 {len(pending_codes)} 只股票")
+
+        # 静默模式下收集信号（不更新状态）
+        silent_signals = []
 
         # 5. 逐个检测
         for code in pending_codes:
@@ -123,9 +143,26 @@ class ScanOrchestrator:
                     logger.warning(f"{code}({name}) 获取日K失败，跳过")
                     continue
 
+                # 5.2 检查数据是否同步到目标日期
+                if not sync_result.is_data_current():
+                    if silent_mode:
+                        # 启动时：用现有数据检测（即使不完整），但不更新进度
+                        logger.info(
+                            f"{code}({name}) 数据未同步到目标日期（最后日期={sync_result.last_kline_time}），"
+                            f"启动时仍检测"
+                        )
+                        # 继续执行检测逻辑，但不更新进度
+                    else:
+                        # 定时触发：跳过，留在 pending
+                        logger.info(
+                            f"{code}({name}) 数据不完整（最后日期={sync_result.last_kline_time}），"
+                            f"留待下次检测"
+                        )
+                        continue  # 不调用 update_progress，股票仍在 pending 中
+
                 data = sync_result.data
 
-                # 5.2 信号检测
+                # 5.3 信号检测
                 signals = self.signal_detector.detect(
                     code=code,
                     name=name,
@@ -133,22 +170,29 @@ class ScanOrchestrator:
                     data=data
                 )
 
-                # 5.3 转换为旧格式（向后兼容）
+                # 5.4 转换为旧格式（向后兼容）
                 signal_dict = None
                 if signals:
-                    # 取第一个信号（当前只有金叉）
+                    # 取第一个信号
                     sig = signals[0]
                     signal_dict = {
                         "code": sig.code,
                         "name": sig.name,
                         "ma5": sig.values.get("MA5", 0),
+                        "ma10": sig.values.get("MA10", None),
                         "ma20": sig.values.get("MA20", 0),
                         "close": sig.values.get("close", 0),
+                        "dif": sig.values.get("DIF", None),
+                        "trigger_type": sig.values.get("trigger_type", ""),
                         "date": sig.data_time
                     }
+                    # 静默模式：收集信号用于播报
+                    if silent_mode:
+                        silent_signals.append(signal_dict)
 
-                # 5.4 更新进度
-                self.state.update_progress(code, signal_dict)
+                # 5.5 更新进度（静默模式不更新，定时触发且数据完整才更新）
+                if not silent_mode and sync_result.is_data_current():
+                    self.state.update_progress(code, signal_dict)
 
             except Exception as e:
                 logger.warning(f"检测 {code}({name}) 异常: {e}")
@@ -160,14 +204,33 @@ class ScanOrchestrator:
         result = self.state.get_result()
         result["elapsed"] = elapsed
 
-        # 7. 标记完成
-        if result["pending_count"] == 0:
+        # 静默模式：使用收集的信号
+        if silent_mode:
+            result["signals"] = silent_signals
+            result["signals_count"] = len(silent_signals)
+
+        # 7. 标记完成（静默模式不标记，定时触发且pending为空才完成）
+        pending_count = result.get("pending_count", 0)
+        if not silent_mode and pending_count == 0:
             self.state.mark_completed(date)
             result["completed"] = True
-            logger.info(f"当天 {date} 检测完成，耗时 {elapsed:.1f}秒")
+            logger.info(f"目标日期 {date} 检测完成，耗时 {elapsed:.1f}秒")
+        elif silent_mode:
+            logger.info(f"静默模式检测结束：发现信号 {len(silent_signals)} 只，耗时 {elapsed:.1f}秒")
+        else:
+            logger.info(
+                f"本轮检测结束：待检测 {pending_count} 只（数据不完整或拉取失败）"
+            )
 
         # 8. 播报完成
-        self.notifier.notify_daily_scan_complete(result)
+        if silent_mode:
+            # 静默模式：只发送信号通知（如有信号）
+            if silent_signals:
+                self.notifier.notify_signals(silent_signals)
+                logger.info(f"静默模式：发送信号通知 {len(silent_signals)} 只")
+        else:
+            # 正常模式：发送完成通知
+            self.notifier.notify_daily_scan_complete(result)
 
         return result
 

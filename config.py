@@ -29,15 +29,15 @@ MA_LONG_KLINES_DAILY = MA_LONG_DAYS   # 20根
 # ========== 新架构配置 ==========
 
 # 默认检测条件配置
-DEFAULT_INDICATORS = ["MA5", "MA20"]  # 默认计算的指标列表
-DEFAULT_CONDITIONS = ["golden_cross"]  # 默认的检测条件列表
+DEFAULT_INDICATORS = ["MA5", "MA10", "MA20", "DIF", "DEA", "MACD"]  # 默认计算的指标列表（包含MACD）
+DEFAULT_CONDITIONS = ["golden_cross_with_macd"]  # 默认的检测条件列表（复合条件）
 
 # 指标引擎配置（可扩展）
 INDICATOR_CONFIGS = {
     "daily_kline": {
         "ma": {"short": MA_SHORT_DAYS, "long": MA_LONG_DAYS},
+        "macd": {"fast": 12, "slow": 26, "signal": 9},
         # 后续可添加更多指标配置，如：
-        # "macd": {"fast": 12, "slow": 26, "signal": 9},
         # "kdj": {"k": 9, "d": 3, "j": 3},
     }
 }
@@ -46,7 +46,7 @@ INDICATOR_CONFIGS = {
 CONDITION_CONFIGS = {
     "daily_kline": {
         "cross": {"short": MA_SHORT_DAYS, "long": MA_LONG_DAYS},
-        # 后续可添加更多检测条件配置
+        "golden_cross_macd": {"short": MA_SHORT_DAYS, "long": MA_LONG_DAYS, "macd": {"fast": 12, "slow": 26, "signal": 9}},
     }
 }
 

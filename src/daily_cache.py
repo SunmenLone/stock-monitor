@@ -236,7 +236,7 @@ class DailyKlineCache:
             # 写入缓存
             self.set(code, merged_df, last_fetch_time)
 
-            logger.debug(f"合并 {code} 日K数据：旧{len(old_df) if old_df else 0}条 + 新{len(new_df) if new_df else 0}条 = {len(merged_df)}条")
+            logger.debug(f"合并 {code} 日K数据：旧{len(old_df) if old_df is not None else 0}条 + 新{len(new_df) if new_df is not None else 0}条 = {len(merged_df)}条")
 
             return merged_df
 

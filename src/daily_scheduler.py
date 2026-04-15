@@ -54,11 +54,12 @@ class DailyScheduler:
         logger.info(f"日K检测定时任务已设置: {config.DAILY_SCAN_TIMES}")
 
     def run_once(self) -> None:
-        """启动时立即执行一次日K检测"""
+        """启动时立即执行一次日K检测（静默模式）"""
         logger.info("启动时执行日K检测...")
 
         try:
-            self.scan_func()
+            # 启动时使用静默模式：只播报信号通知，跳过启动/完成通知
+            self.scan_func(silent_mode=True)
         except Exception as e:
             logger.error(f"启动时日K检测执行异常: {e}")
 
