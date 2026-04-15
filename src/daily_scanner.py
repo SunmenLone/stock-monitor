@@ -7,8 +7,7 @@ from datetime import datetime
 from typing import Dict, List, Optional
 
 import config
-from src.data_source import DataSource
-from src.daily_cache import DailyKlineCache
+from src.data_sync_service import DataSyncService
 from src.daily_state import DailyScanState
 from src.indicators import calculate_indicators_daily, detect_cross, get_current_values
 from src.notifier import create_notifier
@@ -20,8 +19,7 @@ class DailyScanner:
     """日K线扫描器"""
 
     def __init__(self):
-        self.data_source = DataSource()
-        self.cache = DailyKlineCache()
+        self.data_sync = DataSyncService()  # 使用数据同步服务
         self.state = DailyScanState()
         self.notifier = create_notifier()
 
@@ -59,18 +57,17 @@ class DailyScanner:
         # 2. 新的一天？重置状态
         state_date = self.state.get_date()
         if state_date != date:
-            stocks = self.data_source.get_hs300_stocks()
+            stocks = self.data_sync.get_hs300_stocks()
             self.state.reset_for_new_day(stocks)
             # 清理过期缓存
-            self.cache.clear_expired()
+            self.data_sync.clear_expired_cache()
 
         # 3. 获取待检测股票列表（使用副本，避免遍历中修改原列表）
         pending_codes = list(self.state.get_pending_stocks())
         total = self.state.get_result()["total"]
 
         # 4. 获取股票名称映射（用于播报）
-        stocks = self.data_source.get_hs300_stocks()
-        stock_map = {s["code"]: s["name"] for s in stocks}
+        stock_map = self.data_sync.get_stock_names()
 
         # 5. 播报"开始检测"
         result_before = self.state.get_result()
@@ -82,40 +79,19 @@ class DailyScanner:
 
         logger.info(f"开始日K检测: {date}, 待检测 {len(pending_codes)} 只股票")
 
-        # 6. 逐个检测（使用缓存）
+        # 6. 逐个检测（使用数据同步服务）
         for code in pending_codes:
             name = stock_map.get(code, "未知")
 
             try:
-                # 检查缓存
-                cached = self.cache.get_with_check(code)
-                old_klines = cached["data"]
-                last_kline_time = cached.get("last_kline_time")
+                # 使用数据同步服务获取数据
+                sync_result = self.data_sync.sync_stock_data(code, name)
 
-                # 缓存需要更新或不存在 -> 从数据源增量拉取
-                if cached["needs_update"] or old_klines is None:
-                    # 增量拉取：传递最后K线日期
-                    logger.debug(f"拉取 {code}({name}) 日K数据..." + (f" 从{last_kline_time}" if last_kline_time else ""))
-                    new_klines = self.data_source.get_stock_daily_klines(
-                        code,
-                        start_date=last_kline_time  # 增量拉取起始日期
-                    )
-
-                    if new_klines is not None:
-                        # 合并新旧数据
-                        if old_klines is not None and not old_klines.empty:
-                            klines = self.cache.merge_and_set(code, old_klines, new_klines)
-                        else:
-                            self.cache.set(code, new_klines)
-                            klines = new_klines
-                    else:
-                        klines = old_klines  # 拉取失败，使用旧缓存
-                else:
-                    klines = old_klines  # 缓存有效，直接使用
-
-                if klines is None or klines.empty:
+                if not sync_result.has_data():
                     logger.warning(f"{code}({name}) 获取日K失败，跳过")
                     continue
+
+                klines = sync_result.data
 
                 # 计算MA5/MA20（使用日K均线周期）
                 indicators = calculate_indicators_daily(klines)

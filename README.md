@@ -38,17 +38,6 @@ cp .env.example .env
 
 编辑 `.env` 文件，填写以下配置：
 
-### TuShare配置（主数据源）
-
-TuShare是主要数据源，提供稳定的分钟K线数据。
-
-```env
-# TuShare Token（必需）
-# 注册地址: https://tushare.pro
-# 注册后获取Token，免费积分可获取分钟K线
-TUSHARE_TOKEN=your_tushare_token_here
-```
-
 ### 钉钉机器人配置
 
 ```env
@@ -57,18 +46,6 @@ DINGDING_WEBHOOK=https://oapi.dingtalk.com/sendmsg?access_token=YOUR_TOKEN
 
 # 钉钉签名密钥（可选，如启用加签验证）
 DINGDING_SECRET=YOUR_SECRET
-```
-
-### 阿里云OSS配置（可选）
-
-用于上传图表图片，使通知中显示图表链接。
-
-```env
-OSS_ACCESS_KEY_ID=YOUR_ACCESS_KEY_ID
-OSS_ACCESS_KEY_SECRET=YOUR_ACCESS_KEY_SECRET
-OSS_BUCKET_NAME=your-bucket-name
-OSS_ENDPOINT=oss-cn-shanghai.aliyuncs.com
-OSS_PREFIX=stock-charts/
 ```
 
 ## 数据源
@@ -100,9 +77,6 @@ OSS_PREFIX=stock-charts/
 ```bash
 # 启动程序
 python main.py
-
-# 测试数据源
-python test_akshare.py
 ```
 
 ## 项目结构
@@ -114,13 +88,15 @@ stock-monitor/
 ├── requirements.txt     # 依赖列表
 ├── .env.example         # 配置模板
 ├── src/
-│   ├── data_source.py   # 数据获取（BaoStock日K）
-│   ├── daily_scanner.py # 日K扫描器
-│   ├── daily_scheduler.py # 日K调度器
-│   ├── daily_cache.py   # 日K缓存（增量更新）
-│   ├── daily_state.py   # 每日检测状态管理
-│   ├── indicators.py    # 技术指标计算
-│   ├── notifier.py      # 钉钉通知
+│   ├── data_source.py       # 数据获取（BaoStock日K）
+│   ├── data_sync_service.py # 数据同步服务
+│   ├── scan_orchestrator.py # 扫描编排器
+│   ├── daily_scheduler.py   # 日K调度器
+│   ├── daily_cache.py       # 日K缓存（增量更新）
+│   ├── daily_state.py       # 每日检测状态管理
+│   ├── indicators/          # 指标计算框架（可扩展）
+│   ├── detection/           # 信号检测框架（可扩展）
+│   ├── notifier.py          # 钉钉通知
 ├── data/
 │   ├── daily_klines_cache/  # 日K缓存目录
 │   ├── daily_scan_state.json  # 每日检测状态

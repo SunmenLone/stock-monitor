@@ -9,12 +9,9 @@ import time
 import urllib.parse
 import requests
 from datetime import datetime
-from pathlib import Path
-from typing import List, Dict, Optional
+from typing import List, Dict
 
 import config
-from src.chart_generator import generate_ma_chart
-from src.oss_uploader import create_uploader
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +22,6 @@ class DingDingNotifier:
     def __init__(self):
         self.webhook = config.DINGDING_WEBHOOK
         self.secret = config.DINGDING_SECRET
-        self.oss_uploader = create_uploader()
 
     def _get_sign(self) -> tuple:
         """
@@ -65,15 +61,7 @@ class DingDingNotifier:
         return url
 
     def send_text(self, content: str) -> bool:
-        """
-        发送文本消息
-
-        Args:
-            content: 文本内容
-
-        Returns:
-            是否成功
-        """
+        """发送文本消息"""
         url = self._build_url()
         if not url:
             return False
@@ -101,16 +89,7 @@ class DingDingNotifier:
             return False
 
     def send_markdown(self, title: str, content: str) -> bool:
-        """
-        发送Markdown消息
-
-        Args:
-            title: 消息标题
-            content: Markdown内容
-
-        Returns:
-            是否成功
-        """
+        """发送Markdown消息"""
         url = self._build_url()
         if not url:
             return False
@@ -138,176 +117,8 @@ class DingDingNotifier:
             logger.error(f"发送钉钉消息异常: {e}")
             return False
 
-    def notify_scan_start(self, stock_count: int = 300) -> bool:
-        """
-        发送扫描开始通知
-
-        Args:
-            stock_count: 待扫描股票数量
-
-        Returns:
-            是否成功
-        """
-        now = datetime.now().strftime("%Y-%m-%d %H:%M")
-
-        title = "🔍 沪深300扫描启动"
-
-        content = f"""## 🔍 沪深300均线交叉检测
-
-**启动时间**: {now}
-
-**扫描范围**: 沪深300 ({stock_count}只股票)
-
----
-
-系统正在扫描检测金叉信号，请稍候..."""
-
-        return self.send_markdown(title, content)
-
-    def notify_scan_complete(self, total_scanned: int, success_scanned: int,
-                              signal_count: int, elapsed_seconds: float,
-                              reference_date: str = None) -> bool:
-        """
-        发送扫描完成通知（无论是否有信号都发送）
-
-        Args:
-            total_scanned: 总扫描股票数
-            success_scanned: 成功扫描数
-            signal_count: 发现金叉信号数
-            elapsed_seconds: 扫描耗时（秒）
-            reference_date: 参考日期
-
-        Returns:
-            是否成功
-        """
-        url = self._build_url()
-        if not url:
-            logger.error("未配置钉钉Webhook URL")
-            return False
-
-        now = datetime.now().strftime("%Y-%m-%d %H:%M")
-
-        if signal_count > 0:
-            title = f"✅ 沪深300扫描完成 ({signal_count}只金叉)"
-            status_text = f"**发现信号**: 📊 {signal_count} 只金叉"
-        else:
-            title = "✅ 沪深300扫描完成"
-            status_text = "**发现信号**: 未发现符合条件的股票"
-
-        lines = [
-            f"## {title}",
-            f"",
-            f"**完成时间**: {now}",
-            f"**扫描范围**: 沪深300",
-            f"**扫描统计**: {success_scanned}/{total_scanned} 只",
-            f"**耗时**: {elapsed_seconds:.1f}秒",
-        ]
-
-        if reference_date:
-            lines.append(f"**参考日期**: {reference_date}")
-
-        lines.extend([
-            f"",
-            "---",
-            f"",
-            status_text,
-        ])
-
-        content = "\n".join(lines)
-
-        return self.send_markdown(title, content)
-
-    def notify_golden_cross(self, signals: List[Dict]) -> bool:
-        """
-        发送金叉信号通知（含均线图表）
-
-        Args:
-            signals: 金叉信号列表，需包含 klines, ma_short_series, ma_long_series
-
-        Returns:
-            是否成功
-        """
-        if not signals:
-            logger.info("无金叉信号，不发送通知")
-            return True
-
-        now = datetime.now().strftime("%Y-%m-%d %H:%M")
-
-        # 构建Markdown内容
-        title = f"📊 沪深300金叉信号 ({len(signals)}只)"
-
-        lines = [
-            f"## 📊 沪深300金叉信号检测",
-            f"",
-            f"**检测时间**: {now}",
-            f"**信号数量**: {len(signals)}只",
-            f"",
-            "---",
-            f""
-        ]
-
-        for sig in signals:
-            code = sig["code"]
-            name = sig["name"]
-            close = sig["close"]
-            ma_short = sig["ma_short"]
-            ma_long = sig["ma_long"]
-            data_time = sig.get("data_time", sig.get("time", "未知"))
-
-            diff_pct = ((ma_short - ma_long) / ma_long) * 100
-
-            lines.append(f"### {name} ({code})")
-            lines.append(f"- 当前价: **{close:.2f}**")
-            lines.append(f"- MA5: {ma_short:.2f}")
-            lines.append(f"- MA20: {ma_long:.2f}")
-            lines.append(f"- 均线差: +{diff_pct:.2f}%")
-            lines.append(f"- 数据时间: {data_time}")
-
-            # 生成并嵌入图表
-            if "klines" in sig and "ma_short_series" in sig:
-                try:
-                    chart_data = generate_ma_chart(
-                        code, name,
-                        sig["klines"],
-                        sig["ma_short_series"],
-                        sig["ma_long_series"]
-                    )
-                    # 上传PNG到OSS
-                    oss_url = None
-                    if self.oss_uploader.is_available():
-                        png_path = chart_data["png_path"]
-                        # 使用股票代码+时间戳作为文件名
-                        oss_filename = f"{code}_{int(time.time())}.png"
-                        oss_url = self.oss_uploader.upload_chart(png_path, oss_filename)
-
-                    # 使用OSS链接或本地路径
-                    lines.append(f"")
-                    if oss_url:
-                        lines.append(f"📈 [查看均线图表]({oss_url})")
-                    else:
-                        lines.append(f"本地图表: {chart_data['png_path']}")
-
-                except Exception as e:
-                    logger.warning(f"生成 {code} 图表失败: {e}")
-
-            lines.append(f"")
-
-        content = "\n".join(lines)
-
-        return self.send_markdown(title, content)
-
     def notify_daily_scan_start(self, total: int, pending: int, fetched: int) -> bool:
-        """
-        发送日K检测开始通知
-
-        Args:
-            total: 总股票数
-            pending: 待检测股票数
-            fetched: 已拉取股票数
-
-        Returns:
-            是否成功
-        """
+        """发送日K检测开始通知"""
         now = datetime.now().strftime("%Y-%m-%d %H:%M")
 
         title = "🔍 日K金叉检测启动"
@@ -329,15 +140,7 @@ class DingDingNotifier:
         return self.send_markdown(title, content)
 
     def notify_daily_scan_complete(self, result: Dict) -> bool:
-        """
-        发送日K检测完成通知
-
-        Args:
-            result: 检测结果，包含 completed, total, detected_count, pending_count, signals_count
-
-        Returns:
-            是否成功
-        """
+        """发送日K检测完成通知"""
         url = self._build_url()
         if not url:
             logger.error("未配置钉钉Webhook URL")
@@ -377,15 +180,7 @@ class DingDingNotifier:
         return self.send_markdown(title, content)
 
     def notify_golden_cross_daily(self, signals: List[Dict]) -> bool:
-        """
-        发送日K金叉信号通知
-
-        Args:
-            signals: 金叉信号列表，包含 code, name, ma5, ma20, close, date
-
-        Returns:
-            是否成功
-        """
+        """发送日K金叉信号通知"""
         if not signals:
             logger.info("无日K金叉信号，不发送通知")
             return True

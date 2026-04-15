@@ -9,7 +9,7 @@ from pathlib import Path
 
 import config
 from src.notifier import create_notifier
-from src.daily_scanner import DailyScanner
+from src.scan_orchestrator import ScanOrchestrator
 from src.daily_scheduler import DailyScheduler
 
 
@@ -49,12 +49,12 @@ def main() -> None:
     # 创建通知器
     notifier = create_notifier()
 
-    # 日K检测模块
-    daily_scanner = DailyScanner()
+    # 日K检测模块（使用新架构的编排器）
+    orchestrator = ScanOrchestrator()
 
     def daily_scan_and_notify() -> None:
         """日K检测并发送通知"""
-        result = daily_scanner.scan_daily()
+        result = orchestrator.orchestrate_daily_scan()
         if result.get("signals"):
             notifier.notify_golden_cross_daily(result["signals"])
 
