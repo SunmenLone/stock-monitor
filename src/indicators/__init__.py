@@ -8,21 +8,19 @@
 - engine.py: 指标计算引擎
 
 向后兼容:
-- 保持原有函数 calculate_indicators, calculate_indicators_daily 等可用
-- 原有代码无需修改即可继续工作
+- 保持原有函数 calculate_indicators_daily 等可用
 """
 
 # 导出新框架组件
 from src.indicators.base import Indicator
 from src.indicators.registry import IndicatorRegistry, get_registry, reset_registry
-from src.indicators.engine import IndicatorEngine, create_default_engine_daily, create_default_engine_min15
+from src.indicators.engine import IndicatorEngine, create_default_engine_daily
 from src.indicators.ma import MAIndicator, EMAIndicator, create_ma_indicators_daily
 
 # 导入原有函数（向后兼容）
 from src.indicators_legacy import (
     calculate_ma,
     detect_cross,
-    calculate_indicators,
     get_current_values,
     get_cross_status,
     calculate_indicators_daily,
@@ -54,13 +52,11 @@ __all__ = [
     "get_registry",
     "reset_registry",
     "create_default_engine_daily",
-    "create_default_engine_min15",
     "create_ma_indicators_daily",
     "get_daily_indicator_engine",
     # 原有函数（向后兼容）
     "calculate_ma",
     "detect_cross",
-    "calculate_indicators",
     "get_current_values",
     "get_cross_status",
     "calculate_indicators_daily",
