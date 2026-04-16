@@ -115,7 +115,7 @@ stock-monitor/
 │   ├── daily_klines_cache/  # 日K缓存目录
 │   ├── daily_scan_state.json  # 每日检测状态
 │   ├── hs300_stocks.json    # 沪深300股票列表
-│   ├── trade_dates.json     # 交易日历
+│   ├── trade_dates.json     # 交易日历（last_sync_date记录同步时间）
 ├── logs/                    # 日志目录
 ```
 
