@@ -109,7 +109,7 @@ class ScanOrchestrator:
         state_date = self.state.get_date()
         if state_date != date:
             stocks = self.data_sync.get_hs300_stocks()
-            self.state.reset_for_new_day(stocks)
+            self.state.reset_for_new_day(stocks, date)  # 传入目标日期（最新交易日）
             self.data_sync.clear_expired_cache()
 
         # 3. 获取待检测股票

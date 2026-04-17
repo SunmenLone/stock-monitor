@@ -37,60 +37,47 @@ class DailyScanState:
         except Exception as e:
             logger.error(f"保存状态文件失败: {e}")
 
-    def _get_current_date(self) -> str:
-        """获取当前日期"""
-        return datetime.now().strftime("%Y-%m-%d")
-
     def get_date(self) -> str:
         """获取状态记录的日期"""
         return self._state.get("date", "")
 
-    def is_completed(self, date: str = None) -> bool:
+    def is_completed(self, date: str) -> bool:
         """
         检查指定日期是否已完成检测
 
         Args:
-            date: 日期字符串，默认为当天
+            date: 目标日期字符串（必须是最新交易日）
 
         Returns:
             是否已完成
         """
-        if date is None:
-            date = self._get_current_date()
-
         # 日期不匹配，未完成
         if self._state.get("date") != date:
             return False
 
         return self._state.get("completed", False)
 
-    def mark_completed(self, date: str = None) -> None:
+    def mark_completed(self, date: str) -> None:
         """
         标记指定日期已完成检测
 
         Args:
-            date: 日期字符串，默认为当天
+            date: 目标日期字符串（必须是最新交易日）
         """
-        if date is None:
-            date = self._get_current_date()
-
         self._state["date"] = date
         self._state["completed"] = True
         self._state["last_update"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         self._save()
         logger.info(f"标记 {date} 检测完成")
 
-    def reset_for_new_day(self, stocks: List[Dict], date: str = None) -> None:
+    def reset_for_new_day(self, stocks: List[Dict], date: str) -> None:
         """
         新的一天重置状态
 
         Args:
             stocks: 沪深300股票列表 [{"code": "000001", "name": "平安银行"}, ...]
-            date: 日期字符串，默认为当天
+            date: 目标日期字符串（必须是最新交易日）
         """
-        if date is None:
-            date = self._get_current_date()
-
         stock_codes = [s["code"] for s in stocks]
 
         self._state = {
