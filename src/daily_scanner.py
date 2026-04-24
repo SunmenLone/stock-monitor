@@ -11,6 +11,7 @@ from src.data_sync_service import DataSyncService
 from src.daily_state import DailyScanState
 from src.indicators import calculate_indicators_daily, detect_cross, get_current_values
 from src.notifier import create_notifier
+from src.data_source import DataSource
 
 logger = logging.getLogger(__name__)
 
@@ -22,10 +23,11 @@ class DailyScanner:
         self.data_sync = DataSyncService()  # 使用数据同步服务
         self.state = DailyScanState()
         self.notifier = create_notifier()
+        self.data_source = DataSource()
 
-    def _get_current_date(self) -> str:
-        """获取当前日期"""
-        return datetime.now().strftime("%Y-%m-%d")
+    def _get_target_date(self) -> str:
+        """获取目标日期（最新交易日）"""
+        return self.data_source.get_latest_trade_date()
 
     def scan_daily(self) -> Dict:
         """
@@ -44,12 +46,12 @@ class DailyScanner:
                 "elapsed": float
             }
         """
-        date = self._get_current_date()
+        date = self._get_target_date()  # 使用目标日期（最新交易日）
         start_time = time.time()
 
         # 1. 检查当天是否已完成 -> 跳过，返回上次结果
         if self.state.is_completed(date):
-            logger.info(f"当天 {date} 已完成检测，跳过")
+            logger.info(f"目标日期 {date} 已完成检测，跳过")
             result = self.state.get_result()
             result["elapsed"] = 0
             return result
@@ -58,7 +60,7 @@ class DailyScanner:
         state_date = self.state.get_date()
         if state_date != date:
             stocks = self.data_sync.get_hs300_stocks()
-            self.state.reset_for_new_day(stocks)
+            self.state.reset_for_new_day(stocks, date)  # 传入目标日期
             # 清理过期缓存
             self.data_sync.clear_expired_cache()
 
@@ -77,7 +79,7 @@ class DailyScanner:
             fetched=result_before.get("fetched_count", 0)
         )
 
-        logger.info(f"开始日K检测: {date}, 待检测 {len(pending_codes)} 只股票")
+        logger.info(f"开始日K检测: 目标日期 {date}, 待检测 {len(pending_codes)} 只股票")
 
         # 6. 逐个检测（使用数据同步服务）
         for code in pending_codes:
@@ -136,7 +138,7 @@ class DailyScanner:
         if result["pending_count"] == 0:
             self.state.mark_completed(date)
             result["completed"] = True  # 更新结果状态
-            logger.info(f"当天 {date} 检测完成，耗时 {elapsed:.1f}秒")
+            logger.info(f"目标日期 {date} 检测完成，耗时 {elapsed:.1f}秒")
 
         # 9. 播报完成统计
         self.notifier.notify_daily_scan_complete(result)
