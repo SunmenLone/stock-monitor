@@ -70,6 +70,14 @@ def main() -> None:
     # 创建日K调度器
     daily_scheduler = DailyScheduler(daily_scan_and_notify)
 
+    # 启动时强制刷新交易日历
+    logger.info("启动时刷新交易日历...")
+    try:
+        orchestrator.data_source.get_trade_dates(force_refresh=True)
+        logger.info("交易日历刷新完成")
+    except Exception as e:
+        logger.warning(f"交易日历刷新失败: {e}")
+
     # 启动时立即执行日K检测
     daily_scheduler.run_once()
 

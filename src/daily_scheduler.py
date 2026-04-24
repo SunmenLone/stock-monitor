@@ -45,8 +45,20 @@ class DailyScheduler:
         except Exception as e:
             logger.error(f"日K检测执行异常: {e}")
 
+    def _refresh_trade_dates(self) -> None:
+        """每日10:00刷新交易日历缓存"""
+        logger.info("定时刷新交易日历...")
+        try:
+            self.data_source.get_trade_dates(force_refresh=True)
+            logger.info("交易日历刷新完成")
+        except Exception as e:
+            logger.error(f"交易日历刷新失败: {e}")
+
     def setup_schedule(self) -> None:
-        """设置定时任务（16-19点，间隔30分钟）"""
+        """设置定时任务（16-19点检测 + 10:00刷新交易日历）"""
+        schedule.every().day.at("10:00").do(self._refresh_trade_dates)
+        logger.info("交易日历刷新任务已设置: 10:00")
+
         for scan_time in config.DAILY_SCAN_TIMES:
             schedule.every().day.at(scan_time).do(self._do_scan)
             logger.info(f"日K检测任务已设置: {scan_time}")

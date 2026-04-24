@@ -88,9 +88,12 @@ class DataSource:
         logger.warning("使用内置沪深300股票列表")
         return _get_builtin_hs300()
 
-    def get_trade_dates(self) -> Set[str]:
+    def get_trade_dates(self, force_refresh: bool = False) -> Set[str]:
         """
         获取交易日历
+
+        Args:
+            force_refresh: 强制从 BaoStock 刷新，跳过缓存检查
 
         Returns:
             {"2024-01-02", "2024-01-03", ...}
@@ -99,36 +102,39 @@ class DataSource:
         today_str = datetime.now().strftime("%Y-%m-%d")
         current_year = datetime.now().year
 
-        # 检查缓存有效性
-        if cache_path.exists():
-            cache_data = json.loads(cache_path.read_text())
-            cache_year = cache_data.get("year", 0)
-            dates_list = cache_data.get("dates", [])
+        if force_refresh:
+            logger.info("强制刷新交易日历...")
+        else:
+            # 检查缓存有效性
+            if cache_path.exists():
+                cache_data = json.loads(cache_path.read_text())
+                cache_year = cache_data.get("year", 0)
+                dates_list = cache_data.get("dates", [])
 
-            if cache_year == current_year and dates_list:
-                # 今日在交易日列表中
-                if today_str in dates_list:
-                    logger.info(f"使用交易日历缓存（包含今日 {today_str}）")
-                    return set(dates_list)
+                if cache_year == current_year and dates_list:
+                    # 今日在交易日列表中
+                    if today_str in dates_list:
+                        logger.info(f"使用交易日历缓存（包含今日 {today_str}）")
+                        return set(dates_list)
 
-                # 今日不在列表中，检查是否今天已同步过
-                last_sync_date = cache_data.get("last_sync_date")
+                    # 今日不在列表中，检查是否今天已同步过
+                    last_sync_date = cache_data.get("last_sync_date")
 
-                # 兼容旧格式：如果没有last_sync_date但有initialized，视为已同步
-                if last_sync_date is None and cache_data.get("initialized"):
-                    last_sync_date = today_str  # 旧格式迁移，首次读取时设为今天
+                    # 兼容旧格式：如果没有last_sync_date但有initialized，视为已同步
+                    if last_sync_date is None and cache_data.get("initialized"):
+                        last_sync_date = today_str  # 旧格式迁移，首次读取时设为今天
 
-                if last_sync_date == today_str:
-                    # 今天已同步过，今日确实非交易日
-                    logger.info(f"今日 {today_str} 非交易日（交易日历今日已同步）")
-                    return set(dates_list)
-                else:
-                    # 上次同步不是今天，可能有新交易日需要刷新
-                    latest_date_str = max(dates_list)
-                    logger.info(
-                        f"交易日历上次同步: {last_sync_date or '未知'}, "
-                        f"最新交易日: {latest_date_str}，需要刷新"
-                    )
+                    if last_sync_date == today_str:
+                        # 今天已同步过，今日确实非交易日
+                        logger.info(f"今日 {today_str} 非交易日（交易日历今日已同步）")
+                        return set(dates_list)
+                    else:
+                        # 上次同步不是今天，可能有新交易日需要刷新
+                        latest_date_str = max(dates_list)
+                        logger.info(
+                            f"交易日历上次同步: {last_sync_date or '未知'}, "
+                            f"最新交易日: {latest_date_str}，需要刷新"
+                        )
 
         # 尝试BaoStock
         if DATASOURCE_AVAILABLE_DAILY.get("baostock", False):
@@ -154,7 +160,9 @@ class DataSource:
                     }
                     cache_path.write_text(json.dumps(cache_data, indent=2))
                     logger.info(f"BaoStock获取 {len(current_year_dates)} 个交易日，同步时间: {today_str}")
-                    return set(current_year_dates)
+                    # 更新内存缓存，确保后续 is_trade_day() 等调用感知新数据
+                    self._trade_dates = set(current_year_dates)
+                    return self._trade_dates
                 else:
                     logger.warning(f"BaoStock登录失败: {lg.error_msg}")
             except Exception as e:
