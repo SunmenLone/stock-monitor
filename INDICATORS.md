@@ -18,7 +18,7 @@
 |----------|----------|----------|------|
 | `golden_cross` | MA5, MA20 | MA5上穿MA20 | `src/detection/golden_cross.py` |
 | `death_cross` | MA5, MA20 | MA5下穿MA20 | `src/detection/golden_cross.py` |
-| `golden_cross_with_macd` | MA5, MA10, MA20, DIF | 金叉+DIF>0 或 DIF上穿+多头排列 | `src/detection/golden_cross_macd.py` |
+| `golden_cross_with_macd` | MA5, MA10, MA20, DIF | MA5上穿MA20且DIF>0 | `src/detection/golden_cross_macd.py` |
 
 ## 概述
 
