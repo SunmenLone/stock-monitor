@@ -50,7 +50,13 @@ class DailyScheduler:
         logger.info("定时刷新交易日历...")
         try:
             self.data_source.get_trade_dates(force_refresh=True)
-            logger.info("交易日历刷新完成")
+            # 判断并打印今日是否交易日
+            today_str = datetime.now().strftime('%Y-%m-%d')
+            is_today_trade_day = self.data_source.is_trade_day()
+            if is_today_trade_day:
+                logger.info(f"今日 {today_str} 是交易日")
+            else:
+                logger.info(f"今日 {today_str} 不是交易日")
         except Exception as e:
             logger.error(f"交易日历刷新失败: {e}")
 
