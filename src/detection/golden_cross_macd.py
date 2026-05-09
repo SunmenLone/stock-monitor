@@ -1,5 +1,5 @@
 """
-复合检测条件 - 金叉+MACD条件 或 DIF上穿+均线多头排列
+复合检测条件 - 金叉+DIF>0
 """
 import pandas as pd
 from typing import Dict, List, Optional
@@ -9,17 +9,11 @@ from src.detection.base import Signal, SignalCondition
 
 class GoldenCrossWithMACDCondition(SignalCondition):
     """
-    复合检测条件
+    复合检测条件：金叉且DIF>0
 
-    检测逻辑（满足任一即可）：
-
-    条件A：金叉且DIF在0轴上方
+    检测条件：
     - MA5上穿MA20（金叉）
     - 且 DIF > 0
-
-    条件B：DIF上穿0轴且均线多头排列
-    - DIF从负变正（上穿0轴）
-    - 且 MA5 > MA10 > MA20（多头排列）
 
     参数:
         short_period: 短期均线周期（如5）
@@ -64,7 +58,7 @@ class GoldenCrossWithMACDCondition(SignalCondition):
 
     @property
     def description(self) -> str:
-        return f"金叉+DIF>0 或 DIF上穿0轴+均线多头排列"
+        return "金叉+DIF>0"
 
     def detect(
         self,
@@ -117,29 +111,17 @@ class GoldenCrossWithMACDCondition(SignalCondition):
         # 条件A：金叉且DIF>0
         golden_cross = prev_ma5 <= prev_ma20 and curr_ma5 > curr_ma20
         dif_above_zero = curr_dif > 0
-        condition_a = golden_cross and dif_above_zero
+        condition = golden_cross and dif_above_zero
 
-        # 条件B：DIF上穿0轴且均线多头排列
-        dif_cross_zero = prev_dif < 0 and curr_dif > 0
-        ma_bullish = curr_ma5 > curr_ma10 and curr_ma10 > curr_ma20
-        condition_b = dif_cross_zero and ma_bullish
-
-        # 满足任一条件即可
-        if not (condition_a or condition_b):
+        if not condition:
             return None
-
-        # 确定触发条件类型
-        if condition_a and condition_b:
-            trigger_type = "金叉+DIF>0 且 DIF上穿+多头排列"
-        elif condition_a:
-            trigger_type = "金叉+DIF>0"
-        else:
-            trigger_type = "DIF上穿0轴+均线多头排列"
 
         # 构建信号
         close = data["close"].iloc[-1]
         last_time = data["time"].iloc[-1]
         data_time = str(last_time)[:10] if len(str(last_time)) >= 10 else str(last_time)
+
+        trigger_type = "金叉+DIF>0"
 
         return Signal(
             code=code,

@@ -8,9 +8,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ### 检测条件
 
-满足以下任一条件即触发信号：
-- **条件A**：MA5/MA20 金叉 且 DIF > 0
-- **条件B**：DIF 上穿 0 轴 且 均线多头排列（MA5 > MA10 > MA20）
+满足以下条件即触发信号：
+- **金叉+DIF>0**：MA5上穿MA20（金叉） 且 DIF > 0
 
 ## Commands
 
@@ -286,8 +285,6 @@ data/
 
 触发条件类型：
 - "金叉+DIF>0"
-- "DIF上穿0轴+均线多头排列"
-- "金叉+DIF>0 且 DIF上穿+多头排列"（两个条件同时满足）
 
 ## 程序测试
 
