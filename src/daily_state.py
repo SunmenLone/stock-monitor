@@ -88,6 +88,7 @@ class DailyScanState:
             "detected_count": 0,
             "pending_stocks": stock_codes,  # 待检测股票代码列表
             "signals": [],
+            "notified_stocks": [],  # 已播报股票代码列表（同一天内只播报一次）
             "last_update": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         }
         self._save()
@@ -102,6 +103,42 @@ class DailyScanState:
         """
         return self._state.get("pending_stocks", [])
 
+    def get_notified_stocks(self) -> List[str]:
+        """
+        获取已播报股票代码列表
+
+        Returns:
+            已播报股票代码列表
+        """
+        return self._state.get("notified_stocks", [])
+
+    def is_stock_notified(self, code: str) -> bool:
+        """
+        检查股票是否已播报过
+
+        Args:
+            code: 股票代码
+
+        Returns:
+            是否已播报
+        """
+        notified_stocks = self._state.get("notified_stocks", [])
+        return code in notified_stocks
+
+    def mark_stock_notified(self, code: str) -> None:
+        """
+        标记股票已播报
+
+        Args:
+            code: 股票代码
+        """
+        notified_stocks = self._state.get("notified_stocks", [])
+        if code not in notified_stocks:
+            notified_stocks.append(code)
+            self._state["notified_stocks"] = notified_stocks
+            self._save()
+            logger.debug(f"标记股票已播报: {code}")
+
     def update_progress(self, code: str, signal: Optional[Dict] = None) -> None:
         """
         更新检测进度
@@ -110,24 +147,20 @@ class DailyScanState:
             code: 股票代码
             signal: 金叉信号（如果有），包含 code, name, ma5, ma20, close
         """
-        # 从待检测列表移除
         pending = self._state.get("pending_stocks", [])
         if code in pending:
             pending.remove(code)
             self._state["pending_stocks"] = pending
 
-        # 更新计数
         self._state["fetched_count"] = self._state.get("fetched_count", 0) + 1
         self._state["detected_count"] = self._state.get("detected_count", 0) + 1
 
-        # 如果有金叉信号，添加到信号列表
         if signal:
             signals = self._state.get("signals", [])
             signals.append(signal)
             self._state["signals"] = signals
             logger.info(f"发现金叉信号: {code} ({signal.get('name', '未知')})")
 
-        # 更新时间
         self._state["last_update"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         self._save()
 

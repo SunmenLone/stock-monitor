@@ -136,14 +136,22 @@ class ScanOrchestrator:
             name = stock_map.get(code, "未知")
 
             try:
-                # 5.1 数据同步
+                # 5.1 检查是否已播报过（同一天内只播报一次）
+                if self.state.is_stock_notified(code):
+                    logger.debug(f"{code}({name}) 已播报过，跳过")
+                    # 静默模式：从pending移除但不播报
+                    # 正常模式：正常处理，update_progress会从pending移除
+                    if silent_mode:
+                        continue
+
+                # 5.2 数据同步
                 sync_result = self.data_sync.sync_stock_data(code, name)
 
                 if not sync_result.has_data():
                     logger.warning(f"{code}({name}) 获取日K失败，跳过")
                     continue
 
-                # 5.2 检查数据是否同步到目标日期
+                # 5.3 检查数据是否同步到目标日期
                 if not sync_result.is_data_current():
                     if silent_mode:
                         # 启动时：用现有数据检测（即使不完整），但不更新进度
@@ -162,7 +170,7 @@ class ScanOrchestrator:
 
                 data = sync_result.data
 
-                # 5.3 信号检测
+                # 5.4 信号检测
                 signals = self.signal_detector.detect(
                     code=code,
                     name=name,
@@ -170,10 +178,9 @@ class ScanOrchestrator:
                     data=data
                 )
 
-                # 5.4 转换为旧格式（向后兼容）
+                # 5.5 转换为旧格式（向后兼容）
                 signal_dict = None
                 if signals:
-                    # 取第一个信号
                     sig = signals[0]
                     signal_dict = {
                         "code": sig.code,
@@ -186,11 +193,10 @@ class ScanOrchestrator:
                         "trigger_type": sig.values.get("trigger_type", ""),
                         "date": sig.data_time
                     }
-                    # 静默模式：收集信号用于播报
                     if silent_mode:
                         silent_signals.append(signal_dict)
 
-                # 5.5 更新进度（静默模式不更新，定时触发且数据完整才更新）
+                # 5.6 更新进度（静默模式不更新，定时触发且数据完整才更新）
                 if not silent_mode and sync_result.is_data_current():
                     self.state.update_progress(code, signal_dict)
 
@@ -204,10 +210,12 @@ class ScanOrchestrator:
         result = self.state.get_result()
         result["elapsed"] = elapsed
 
-        # 静默模式：使用收集的信号
+        # 静默模式：使用收集的信号，并过滤掉已通知的股票
         if silent_mode:
-            result["signals"] = silent_signals
-            result["signals_count"] = len(silent_signals)
+            notified_stocks = self.state.get_notified_stocks()
+            new_signals = [s for s in silent_signals if s["code"] not in notified_stocks]
+            result["signals"] = new_signals
+            result["signals_count"] = len(new_signals)
 
         # 7. 标记完成（静默模式不标记，定时触发且pending为空才完成）
         pending_count = result.get("pending_count", 0)
@@ -224,10 +232,13 @@ class ScanOrchestrator:
 
         # 8. 播报完成
         if silent_mode:
-            # 静默模式：只发送信号通知（如有信号）
-            if silent_signals:
-                self.notifier.notify_signals(silent_signals)
-                logger.info(f"静默模式：发送信号通知 {len(silent_signals)} 只")
+            # 静默模式：只发送信号通知（如有新信号）
+            if new_signals:
+                self.notifier.notify_signals(new_signals)
+                logger.info(f"静默模式：发送信号通知 {len(new_signals)} 只（已过滤已通知的 {len(silent_signals) - len(new_signals)} 只）")
+                # 标记这些股票已通知
+                for sig in new_signals:
+                    self.state.mark_stock_notified(sig["code"])
         else:
             # 正常模式：发送完成通知
             self.notifier.notify_daily_scan_complete(result)

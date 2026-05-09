@@ -21,8 +21,9 @@ DATASOURCE_AVAILABLE_DAILY = {"tushare": False, "baostock": True, "akshare": Fal
 class DataSource:
     """BaoStock数据源封装（日K线）"""
 
+    _trade_dates: Optional[Set[str]] = None  # 类变量，所有实例共享
+
     def __init__(self):
-        self._trade_dates: Optional[Set[str]] = None
         self._bs_logged_in = False
 
     def _get_bs_code(self, code: str) -> str:
@@ -117,14 +118,36 @@ class DataSource:
                 # 兼容旧格式：如果没有last_sync_date但有initialized，视为已同步
                 if last_sync_date is None and cache_data.get("initialized"):
                     last_sync_date = today_str  # 旧格式迁移，首次读取时设为今天
+                    # 更新缓存数据为新格式
+                    cache_data["last_sync_date"] = today_str
+                    try:
+                        cache_path.parent.mkdir(parents=True, exist_ok=True)
+                        cache_path.write_text(json.dumps(cache_data, indent=2))
+                        logger.info(f"交易日历缓存格式已迁移，添加last_sync_date字段")
+                    except Exception as e:
+                        logger.error(f"迁移交易日历缓存格式失败: {e}")
 
                 if last_sync_date == today_str:
-                    # 今天已同步过，今日确实非交易日
-                    logger.info(f"今日 {today_str} 非交易日（交易日历今日已同步）")
-                    return set(dates_list)
+                    # 今天已同步过，检查缓存数据是否足够新
+                    latest_date_str = max(dates_list) if dates_list else "2000-01-01"
+                    # 如果缓存中的最新交易日早于今天超过7天，则刷新（可能缓存不完整）
+                    latest_date = datetime.strptime(latest_date_str, "%Y-%m-%d").date()
+                    today_date = datetime.strptime(today_str, "%Y-%m-%d").date()
+                    days_diff = (today_date - latest_date).days
+
+                    if days_diff > 7:
+                        # 缓存数据太旧，即使今天已同步过，也重新获取
+                        logger.info(
+                            f"今日 {today_str} 非交易日（交易日历今日已同步），"
+                            f"但缓存数据已过期（最新交易日 {latest_date_str}，相差 {days_diff} 天），需要刷新"
+                        )
+                    else:
+                        # 缓存数据较新，今日确实非交易日
+                        logger.info(f"今日 {today_str} 非交易日（交易日历今日已同步）")
+                        return set(dates_list)
                 else:
                     # 上次同步不是今天，可能有新交易日需要刷新
-                    latest_date_str = max(dates_list)
+                    latest_date_str = max(dates_list) if dates_list else "2000-01-01"
                     logger.info(
                         f"交易日历上次同步: {last_sync_date or '未知'}, "
                         f"最新交易日: {latest_date_str}，需要刷新"
@@ -152,8 +175,13 @@ class DataSource:
                         "dates": current_year_dates,
                         "last_sync_date": today_str  # 记录同步时间，替代initialized
                     }
-                    cache_path.write_text(json.dumps(cache_data, indent=2))
-                    logger.info(f"BaoStock获取 {len(current_year_dates)} 个交易日，同步时间: {today_str}")
+                    try:
+                        cache_path.parent.mkdir(parents=True, exist_ok=True)
+                        cache_path.write_text(json.dumps(cache_data, indent=2))
+                        logger.info(f"BaoStock获取 {len(current_year_dates)} 个交易日，同步时间: {today_str}，已保存到缓存")
+                    except Exception as e:
+                        logger.error(f"保存交易日历缓存失败: {e}")
+                        logger.info(f"BaoStock获取 {len(current_year_dates)} 个交易日，同步时间: {today_str}（缓存保存失败）")
                     return set(current_year_dates)
                 else:
                     logger.warning(f"BaoStock登录失败: {lg.error_msg}")
@@ -167,26 +195,26 @@ class DataSource:
         if date is None:
             date = datetime.now()
 
-        if self._trade_dates is None:
-            self._trade_dates = self.get_trade_dates()
+        if self.__class__._trade_dates is None:
+            self.__class__._trade_dates = self.get_trade_dates()
 
         date_str = date.strftime("%Y-%m-%d")
-        return date_str in self._trade_dates
+        return date_str in self.__class__._trade_dates
 
     def get_latest_trade_date(self, date: Optional[datetime] = None) -> str:
         """获取最近的交易日"""
         if date is None:
             date = datetime.now()
 
-        if self._trade_dates is None:
-            self._trade_dates = self.get_trade_dates()
+        if self.__class__._trade_dates is None:
+            self.__class__._trade_dates = self.get_trade_dates()
 
         date_str = date.strftime("%Y-%m-%d")
 
-        if date_str in self._trade_dates:
+        if date_str in self.__class__._trade_dates:
             return date_str
 
-        sorted_dates = sorted(self._trade_dates, reverse=True)
+        sorted_dates = sorted(self.__class__._trade_dates, reverse=True)
         for d in sorted_dates:
             if d <= date_str:
                 logger.info(f"非交易日 {date_str}，回溯到最近交易日 {d}")
