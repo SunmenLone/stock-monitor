@@ -135,20 +135,20 @@ class DataSource:
 
                     if last_sync_date == today_str:
                         # 今天已同步过，检查缓存数据是否足够新
-                    latest_date_str = max(dates_list) if dates_list else "2000-01-01"
-                    # 如果缓存中的最新交易日早于今天超过7天，则刷新（可能缓存不完整）
-                    latest_date = datetime.strptime(latest_date_str, "%Y-%m-%d").date()
-                    today_date = datetime.strptime(today_str, "%Y-%m-%d").date()
-                    days_diff = (today_date - latest_date).days
+                        latest_date_str = max(dates_list) if dates_list else "2000-01-01"
+                        # 如果缓存中的最新交易日早于今天超过7天，则刷新（可能缓存不完整）
+                        latest_date = datetime.strptime(latest_date_str, "%Y-%m-%d").date()
+                        today_date = datetime.strptime(today_str, "%Y-%m-%d").date()
+                        days_diff = (today_date - latest_date).days
 
-                    if days_diff > 7:
-                        # 缓存数据太旧，即使今天已同步过，也重新获取
-                        logger.info(
-                            f"今日 {today_str} 非交易日（交易日历今日已同步），"
-                            f"但缓存数据已过期（最新交易日 {latest_date_str}，相差 {days_diff} 天），需要刷新"
-                        )
-                    else:
-                        # 缓存数据较新，今日确实非交易日
+                        if days_diff > 7:
+                            # 缓存数据太旧，即使今天已同步过，也重新获取
+                            logger.info(
+                                f"今日 {today_str} 非交易日（交易日历今日已同步），"
+                                f"但缓存数据已过期（最新交易日 {latest_date_str}，相差 {days_diff} 天），需要刷新"
+                            )
+                        else:
+                            # 缓存数据较新，今日确实非交易日
                             logger.info(f"今日 {today_str} 非交易日（交易日历今日已同步）")
                             return set(dates_list)
                     else:

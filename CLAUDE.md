@@ -247,6 +247,7 @@ INDICATOR_CONFIGS = {
 | `OSS_ACCESS_KEY_SECRET` | No | 阿里云OSS访问密钥 |
 | `OSS_BUCKET_NAME` | No | OSS Bucket名称 |
 | `OSS_ENDPOINT` | No | OSS Endpoint（如：oss-cn-shanghai.aliyuncs.com） |
+| `OSS_PREFIX` | No | 上传路径前缀 |
 <!-- END AUTO-GENERATED -->
 
 ## Data Files
